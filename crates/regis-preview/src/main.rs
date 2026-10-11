@@ -1,5 +1,6 @@
 mod paint;
 mod present;
+mod tower;
 mod ui;
 use minifb::{InputCallback, Key, MouseButton, MouseMode, ScaleMode, Window, WindowOptions};
 use paint::{H, Painter, W};
@@ -30,6 +31,8 @@ impl InputCallback for TextInput {
 }
 fn state(ui: &Ui) -> serde_json::Value {
     serde_json::json!({"simulated":true,"selected":ui.model.selected,"memory_mib":ui.model.used(),
+        "tower_angle":ui.tower.angle,"tower_locked":ui.tower.locked,"motion":ui.motion,
+        "labels":tower::labels(&ui.model,ui.scroll).iter().map(|l|serde_json::json!({"id":l.id,"x":l.x,"y":l.y})).collect::<Vec<_>>(),
         "inspector":ui.model.inspector,"status":ui.status,"input":ui.input,
         "nodes":ui.model.nodes.iter().map(|n| serde_json::json!({"id":n.id,"name":n.name,"parent":n.parent,"memory_mib":n.memory,"paused":n.paused})).collect::<Vec<_>>()})
 }
@@ -44,7 +47,7 @@ fn save_json(path: &Path, value: &serde_json::Value) -> Result<(), Box<dyn std::
 }
 fn verify(ui: &mut Ui) -> Result<(), Box<dyn std::error::Error>> {
     let initial = ui.model.used();
-    ui.click(400, 418); // Harmonics: real row hit-testing.
+    ui.click(170, 424); // Harmonics: stable branch label hit-testing.
     assert_eq!(ui.model.selected, 4);
     ui.click(100, 748); // Suggested command fills the same prompt as typing.
     assert_eq!(ui.input, "start Aurora 16");
@@ -96,7 +99,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     if args.iter().any(|a| a == "--help") {
         println!(
-            "System Regis native Rust form study (SIMULATED DATA)\nregis-preview [--headless FILE.png] [--verify] [--benchmark] [--frames N] [--state-file FILE.json]\nF2 inspector · F3 reduced motion · F10 screenshot · Ctrl+Q quit"
+            "System Regis native Rust form study (SIMULATED DATA)\nregis-preview [--headless FILE.png] [--verify] [--benchmark] [--frames N] [--state-file FILE.json]\nF2 inspector · F3 reduced motion · F4 orbit · F10 screenshot · Ctrl+Q quit"
         );
         return Ok(());
     }
@@ -115,6 +118,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if i % 3 == 0 {
                 ui.model.advance();
             }
+            ui.animate(1. / 30., false);
             let t = Instant::now();
             ui.draw(&mut painter);
             if i >= 30 {
@@ -169,6 +173,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut previous_mouse = false;
     let mut frame = 0;
     let mut last_tick = Instant::now();
+    let mut last_frame = Instant::now();
     while window.is_open() && frame_limit.is_none_or(|limit| frame < limit) {
         let began = Instant::now();
         if window.is_key_down(Key::LeftCtrl) && window.is_key_down(Key::Q) {
@@ -177,6 +182,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         for event in chars.borrow_mut().drain(..) {
             let key = match event {
                 Input::Character(ch) => {
+                    ui.tower.hold();
                     if ui.input.chars().count() < 90 {
                         ui.input.push(ch);
                     }
@@ -194,12 +200,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Key::Down => ui.navigate(1),
                 Key::F2 => ui.command(if ui.model.inspector { "close" } else { "open" }),
                 Key::F3 => ui.motion = !ui.motion,
+                Key::F4 => ui.tower.release(),
                 Key::F10 => {
                     painter.save(Path::new("artifacts/regis/live.png"))?;
                 }
                 _ => {}
             }
         }
+        let (ww, hh) = window.get_size();
+        let pointer = window
+            .get_unscaled_mouse_pos(MouseMode::Discard)
+            .and_then(|(x, y)| present::Viewport::new(ww, hh).pointer(x, y));
+        let hover =
+            pointer.is_some_and(|(x, y)| (54..1005).contains(&x) && (188..622).contains(&y));
+        ui.animate(last_frame.elapsed().as_secs_f32(), hover);
+        last_frame = Instant::now();
         let mouse = window.get_mouse_down(MouseButton::Left);
         if mouse && !previous_mouse {
             if let Some((x, y)) = window.get_unscaled_mouse_pos(MouseMode::Discard) {

@@ -88,16 +88,40 @@ def command(text):
     for ch in text:press('space' if ch==' ' else ch)
     press('Return')
 
-def click(px,py):
+def move(px,py):
     guard();r=U();a=I();b=I();ww=C.c_uint();hh=C.c_uint();border=C.c_uint();depth=C.c_uint()
     geom(d,w,C.byref(r),C.byref(a),C.byref(b),C.byref(ww),C.byref(hh),C.byref(border),C.byref(depth))
     scale=min(ww.value/1440,hh.value/900)
     px=int((ww.value-1440*scale)/2+px*scale);py=int((hh.value-900*scale)/2+py*scale)
     warp(d,0,w,0,0,0,0,px,py);flush(d);time.sleep(.08)
+
+def click(px,py):
+    move(px,py)
     button(d,1,1,0);flush(d);time.sleep(.08);button(d,1,0,0);flush(d)
 
+def select_node(node_id):
+    current=wait(lambda s:any(l['id']==node_id for l in s['labels']))
+    label=next(l for l in current['labels'] if l['id']==node_id)
+    click(label['x']+75,label['y']+30)
+    return wait(lambda s:s['selected']==node_id and s['tower_locked'])
+
 initial=wait(lambda s:s['simulated'])
-click(400,418);wait(lambda s:s['selected']==4)
+move(1300,860)
+press('F4')
+start=wait(lambda s:not s['tower_locked'])['tower_angle']
+wait(lambda s:abs(s['tower_angle']-start)>.02)
+select_node(4)
+time.sleep(1.8)
+held=wait(lambda s:s['tower_locked'])['tower_angle']
+time.sleep(.3)
+assert abs(wait(lambda s:s['tower_locked'])['tower_angle']-held)<.004
+press('F3');wait(lambda s:not s['motion'])
+press('F4');move(1300,860)
+held=wait(lambda s:not s['motion'])['tower_angle']
+time.sleep(.3)
+assert wait(lambda s:not s['motion'])['tower_angle']==held
+press('F3');wait(lambda s:s['motion'])
+select_node(4)
 base=initial['memory_mib']
 command('start aurora 16')
 created=wait(lambda s:any(n['name']=='aurora' for n in s['nodes']))
@@ -111,15 +135,15 @@ click(1100,550);wait(lambda s:not next(n for n in s['nodes'] if n['id']==child)[
 if SPAWN:
     subprocess.run(['magick','import','-window',str(w),str(ROOT/'artifacts/regis/window-tall.png')],check=True)
     define(x,'XResizeWindow',I,[P,U,C.c_uint,C.c_uint])(d,w,1800,700);flush(d);time.sleep(.3)
-    click(400,418);wait(lambda s:s['selected']==4)
-    click(400,468);wait(lambda s:s['selected']==child)
+    select_node(4)
+    select_node(child)
 press('F2');wait(lambda s:not s['inspector'])
 press('F2');wait(lambda s:s['inspector'])
 command('stop');final=wait(lambda s:s['memory_mib']==base and s['selected']==4)
 assert all(n['id']!=child for n in final['nodes'])
 press('F10');time.sleep(.3)
 report={'passed':True,'simulated':True,'window':w,'initial_mib':base,'final_mib':final['memory_mib'],
-        'isolated_display':SPAWN,'checks':['mouse selection','typed start','typed allocation','mouse pause/resume','inspector keyboard toggle','typed stop','exact memory release','F10 screenshot']+(['tall/wide window pointer mapping'] if SPAWN else [])}
+        'isolated_display':SPAWN,'checks':['automatic tower rotation','focus rotation settles and locks','reduced motion holds camera','stable label mouse selection','typed start','typed allocation','mouse pause/resume','inspector keyboard toggle','typed stop','exact memory release','F10 screenshot']+(['tall/wide window pointer mapping'] if SPAWN else [])}
 (ROOT/'artifacts/regis/native-test.json').write_text(json.dumps(report,indent=2)+'\n')
 print(json.dumps(report,indent=2))
 define(x,'XCloseDisplay',I,[P])(d)

@@ -115,17 +115,6 @@ impl Painter {
             }
         }
     }
-    pub fn ring(&mut self, x: i32, y: i32, r: i32, c: u32, fraction: f32) {
-        let steps = (r as f32 * 8. * fraction.clamp(0., 1.)) as i32;
-        for i in 0..steps {
-            let angle =
-                i as f32 / (r as f32 * 8.) * std::f32::consts::TAU - std::f32::consts::FRAC_PI_2;
-            let px = x as f32 + angle.cos() * r as f32;
-            let py = y as f32 + angle.sin() * r as f32;
-            self.pixel(px as i32, py as i32, c, 220);
-            self.pixel(px as i32 + 1, py as i32, c, 100);
-        }
-    }
     pub fn text(
         &mut self,
         x: i32,

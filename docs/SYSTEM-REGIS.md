@@ -1,4 +1,4 @@
-# System Regis — form study 01
+# System Regis — form study 02: the ASCII tower
 
 System Regis is the proposed living control surface of EutherUS: a process tree,
 visible resource ownership and a prompt whose context follows the selected node.
@@ -26,26 +26,44 @@ children are independent and are not recursively suspended. System nodes are
 protected against stopping, pausing and memory release. There is a limit of
 24 live nodes and five model event records.
 
-The viewer rasterizes a 1440×900 RGB buffer in software, with a cached background
-and cached glyph masks. Activity uses deterministic integer triangular waves.
-Small glows and rings encode the selected node and simulated state. No GPU
-shader or per-frame external image assets are required. Window presentation
+The central view is a rotating cylindrical ASCII tower with masonry, ledges and
+crenellations. Precomputed 3D surface samples are rotated, perspective-projected,
+lit and depth-tested into a 118×37 character grid. The renderer writes ASCII
+characters into the ordinary 1440×900 RGB framebuffer using cached font masks.
+No GPU shader or per-frame external image assets are required.
+
+Process branches use the simulation's actual parent-child relationships.
+Activity pulses travel along those branches; back-facing geometry is dimmer and
+occluded by nearer character cells. Labels remain in stable left/right rails
+for reliable selection. At most eight labels/branches are displayed at once;
+scroll or use the arrow keys to reach the rest, up to the model's 24-node cap.
+The inspector always names the selected node's actual parent.
+
+The tower slowly orbits when idle. Hovering over its viewport holds rotation.
+Selecting a label or a front-facing endpoint eases its angular position toward
+the viewer and locks it. Typing also holds the camera. F4 releases the lock;
+move the pointer out of the tower and clear the prompt to let it orbit. F3
+stops camera animation and branch pulses while keeping telemetry updates.
+Stationary labels do not move during a focus turn. This is CPU-projected 3D,
+not a recorded animation. The data remains simulated.
+
+Activity samples use deterministic integer triangular waves. Window presentation
 uses a shared viewport for centered aspect fitting and pointer coordinates.
 A 30 fps cap and approximately 10 Hz model updates bound normal animation.
-F3 removes decorative activity glows; telemetry continues updating.
+
 
 Bundled Liberation fonts retain their SIL Open Font License in
 `crates/regis-preview/assets/FONT-LICENSE.txt`.
 
 ## Interact
 
-- Click a process row or an allocated memory field to choose context.
+- Click a stable process label, front-facing branch endpoint or allocated memory field to choose context.
 - Up/down moves between nodes; the wheel scrolls the tree when it is full.
 - Type in the always-active prompt and press Enter. Escape clears the input.
 - F2 opens/closes the selected node's inspector. It is an attached detail pane,
   not an independent movable OS window.
 - Inspector buttons pause/resume or stop the selected task.
-- F3 toggles decorative motion; F10 saves `artifacts/regis/live.png`.
+- F3 toggles camera/pulse animation; F4 releases the camera lock; F10 saves `artifacts/regis/live.png`.
 - Close the window or press Ctrl+Q to exit.
 
 | Command | Effect in the simulation |
@@ -77,8 +95,8 @@ cargo test --locked -p regis-model -p regis-preview
 
 The headless interaction scenario routes through the UI hit tests and prompt,
 then validates subtree memory accounting, pause/resume, inspector behavior,
-capacity refusal and tree scrolling. Unit tests cover model invariants and
-wide/tall viewport rendering and pointer mapping.
+capacity refusal and tree scrolling. Unit tests cover model invariants, camera locking, depth ordering, label stability at
+multiple angles and wide/tall viewport rendering and pointer mapping.
 
 The benchmark warms glyph caches for 30 frames, measures 600 frames, and reports
 median/p95/max rendering time plus host RSS in `artifacts/regis/benchmark.json`.
@@ -96,8 +114,8 @@ xvfb-run -a -s '-screen 0 1920x1200x24' python3 scripts/test-regis-native.py --s
 
 This starts its own native app on a virtual X11 display, verifies tall and wide
 window scaling with real mouse events, and closes only its own app at the end.
-The native test also passed in the visible host window before the scaling fix;
-the final scaling version passed on the isolated display.
+The tower test also checks actual orbit progression, focus settling and camera
+stillness with reduced motion. Tests use real X11 input on that isolated display.
 
 To test the window on your desktop explicitly:
 

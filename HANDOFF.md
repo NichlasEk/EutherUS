@@ -9,7 +9,8 @@ EutherUS source tree. No push is part of this milestone.
 
 The lab milestone is complete. The user has now approved a first System Regis
 form study: Linux-like modularity, a visually rich process/resource tree and a
-living contextual prompt. A separate native Rust prototype implements that
+living contextual prompt. The latest approved form is a rotating cylindrical
+ASCII tower with process branches, stable labels and a camera that locks on selection. A separate native Rust prototype implements that
 interaction with clearly labelled simulated data. It runs on the Linux host,
 not in QEMU. No further kernel functionality has been added.
 

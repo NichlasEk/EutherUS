@@ -1,8 +1,10 @@
 use crate::paint::*;
+use crate::tower::Tower;
 use regis_model::{CAPACITY_MIB, Model};
 
 pub struct Ui {
     pub model: Model,
+    pub tower: Tower,
     pub input: String,
     pub scroll: usize,
     pub motion: bool,
@@ -14,6 +16,7 @@ impl Ui {
     pub fn new() -> Self {
         Self {
             model: Model::new(),
+            tower: Tower::new(),
             input: String::new(),
             scroll: 0,
             motion: true,
@@ -27,6 +30,7 @@ impl Ui {
         self.error = result.is_err();
         self.status = result.unwrap_or_else(|e| e);
         self.keep_visible();
+        self.tower.focus(self.model.selected, self.motion);
     }
     pub fn submit(&mut self) {
         let command = std::mem::take(&mut self.input);
@@ -47,6 +51,16 @@ impl Ui {
         }
         self.scroll = self.scroll.min(order.len().saturating_sub(8));
     }
+    pub fn focus(&mut self, id: u32) {
+        if self.model.select(id) {
+            self.tower.focus(id, self.motion);
+            self.keep_visible();
+        }
+    }
+    pub fn animate(&mut self, dt: f32, hover: bool) {
+        self.tower
+            .advance(dt, self.motion, hover || !self.input.is_empty());
+    }
     pub fn navigate(&mut self, delta: i32) {
         let order = self.model.order();
         let i = order
@@ -54,7 +68,7 @@ impl Ui {
             .position(|(id, _)| *id == self.model.selected)
             .unwrap_or(0);
         let next = (i as i32 + delta).clamp(0, order.len() as i32 - 1) as usize;
-        self.model.select(order[next].0);
+        self.focus(order[next].0);
         self.keep_visible();
     }
     pub fn click(&mut self, x: i32, y: i32) {
@@ -62,10 +76,9 @@ impl Ui {
             self.motion = !self.motion;
             return;
         }
-        if (54..1005).contains(&x) && (194..594).contains(&y) {
-            let row = ((y - 194) / 50) as usize + self.scroll;
-            if let Some((id, _)) = self.model.order().get(row) {
-                self.model.select(*id);
+        if (54..1005).contains(&x) && (188..594).contains(&y) {
+            if let Some(id) = self.tower.pick(&self.model, self.scroll, x, y) {
+                self.focus(id);
             }
         } else if (1350..1400).contains(&x) && (169..209).contains(&y) {
             self.command("close");
@@ -92,6 +105,7 @@ impl Ui {
                 }
             }
             self.keep_visible();
+            self.tower.focus(self.model.selected, self.motion);
         } else if (55..225).contains(&x) && (735..762).contains(&y) {
             self.input = "start Aurora 16".into();
         } else if (245..420).contains(&x) && (735..762).contains(&y) {
@@ -116,7 +130,7 @@ impl Ui {
         }
         p.text(124, 60, 34, 1, "SYSTEM REGIS", INK);
         p.text(126, 85, 14, 0, "Maskinen tillhör dig.", GOLD);
-        p.text(55, 116, 11, 2, "E U T H E R U S   /   FORMSTUDIE 01", MUTED);
+        p.text(55, 116, 11, 2, "E U T H E R U S   /   FORMSTUDIE 02", MUTED);
         let total: u32 = self.model.nodes.iter().map(|n| n.activity).sum();
         p.text(800, 43, 11, 2, "AKTIVITET", MUTED);
         p.text(800, 76, 27, 0, &format!("{}", total), INK);
@@ -129,7 +143,7 @@ impl Ui {
         p.text(1166, 55, 12, 2, "SIMULERAT SYSTEM", GOLD);
         p.text(1166, 71, 11, 0, "Ingen styrning av värddatorn", MUTED);
         p.line(54, 125, 1386, 125, EDGE);
-        p.text(55, 153, 12, 2, "01 / LEVANDE SYSTEM", GOLD);
+        p.text(55, 153, 12, 2, "01 / DET LEVANDE TORNET", GOLD);
         p.text(
             756,
             153,
@@ -150,103 +164,21 @@ impl Ui {
             },
             MUTED,
         );
-        p.text(111, 181, 10, 2, "TILLHÖRIGHET", MUTED);
-        p.text(610, 181, 10, 2, "AKTIVITET", MUTED);
-        p.text(898, 181, 10, 2, "MINNE", MUTED);
-        let order = self.model.order();
-        for (row, (id, depth)) in order.iter().skip(self.scroll).take(8).enumerate() {
-            let node = self.model.nodes.iter().find(|n| n.id == *id).unwrap();
-            let y = 218 + row as i32 * 50;
-            let x = 88 + (*depth).min(5) as i32 * 43;
-            let c = color(*id);
-            let selected = *id == self.model.selected;
-            if selected {
-                p.rect(54, y - 24, 950, 47, 0x142c32);
-                p.rect(54, y - 24, 3, 47, c);
-                p.border(54, y - 24, 950, 47, 0x284c51);
-            }
-            if let Some(parent) = node.parent {
-                if let Some(parent_row) = order.iter().position(|(id, _)| *id == parent) {
-                    let parent_y =
-                        (218 + (parent_row as i32 - self.scroll as i32) * 50 + 14).max(194);
-                    p.line(x - 43, parent_y, x - 43, y, EDGE);
-                    p.line(x - 43, y, x - 18, y, EDGE);
-                }
-            }
-            if self.motion && node.activity > 0 {
-                p.glow(x, y, 24, c, 15 + node.activity * 2);
-            }
-            p.ring(x, y, 12, EDGE, 1.);
-            p.ring(
-                x,
-                y,
-                12,
-                c,
-                if *id == 0 {
-                    1.
-                } else {
-                    node.memory as f32 / 48.
-                },
-            );
-            p.rect(x - 2, y - 2, 5, 5, c);
+        p.text(70, 181, 10, 2, "PROCESSER / VÄLJ EN GREN", MUTED);
+        p.text(774, 181, 10, 2, "ÄGANDE / AKTIVITET", MUTED);
+        self.tower.draw(p, &self.model, self.scroll, self.motion);
+        if self.model.nodes.len() > 8 {
             p.text(
-                x + 25,
-                y + 1,
-                17,
-                0,
-                &node.name,
-                if selected { INK } else { 0xbccbd3 },
-            );
-            p.text(
-                x + 25,
-                y + 16,
-                10,
-                2,
-                if node.paused {
-                    "VILANDE"
-                } else if node.protected {
-                    "SYSTEM"
-                } else {
-                    "UPPGIFT"
-                },
-                MUTED,
-            );
-            for (i, value) in node.history.iter().enumerate() {
-                let h = (*value as i32).min(25);
-                let bx = 611 + i as i32 * 4;
-                p.rect(bx, y + 12 - h, 2, h.max(1), if h > 0 { c } else { EDGE });
-            }
-            p.text(826, y + 5, 12, 2, &format!("{:02}", node.activity), c);
-            p.text(
-                898,
-                y + 5,
-                13,
-                2,
-                &format!("{:>3} MiB", node.memory),
-                if selected { INK } else { MUTED },
-            );
-        }
-        if order.len() > 8 {
-            p.text(
-                60,
-                614,
+                70,
+                612,
                 11,
                 0,
                 &format!(
-                    "{}–{} / {} · rulla eller använd piltangenter",
+                    "{}–{} / {} · rulla",
                     self.scroll + 1,
-                    (self.scroll + 8).min(order.len()),
-                    order.len()
+                    (self.scroll + 8).min(self.model.nodes.len()),
+                    self.model.nodes.len()
                 ),
-                MUTED,
-            );
-        } else {
-            p.text(
-                62,
-                615,
-                12,
-                0,
-                "Varje gren har ett ursprung. Varje tilldelning har en ägare.",
                 MUTED,
             );
         }
@@ -319,7 +251,7 @@ impl Ui {
             p.rect(end + 3, 800, 2, 20, c);
         }
         p.text(1269, 816, 11, 2, "ENTER", MUTED);
-        p.text(55,874,11,0,"↑ ↓ välj gren    ·    Enter kör    ·    Esc töm    ·    F2 öppna    ·    F3 rörelse    ·    F10 bild",MUTED);
+        p.text(55,874,11,0,"↑ ↓ välj gren    ·    Enter kör    ·    Esc töm    ·    F2 öppna    ·    F3 rörelse    ·    F4 rotera    ·    F10 bild",MUTED);
         p.text(
             1070,
             874,

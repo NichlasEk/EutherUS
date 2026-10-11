@@ -23,16 +23,16 @@ imply a kernel graphics driver.
 
 ## System Regis graphical form study
 
-A separate native Rust prototype explores the living process tree, contextual
-prompt, activity traces and memory ownership. It runs on the Linux host with
+A separate native Rust prototype presents a rotating 3D ASCII tower with process
+branches, a contextual prompt, activity traces and visible memory ownership. It runs on the Linux host with
 **clearly labelled simulated data**, not inside the QEMU kernel.
 
 ```sh
 ./scripts/regis-preview.sh
 ```
 
-Click a node, type `start Aurora 16`, try `alloc 8`, then `stop` and watch the
-allocation return. See [System Regis prototype](docs/SYSTEM-REGIS.md) for controls,
+Click a branch label, type `start Aurora 16`, try `alloc 8`, then `stop` and watch
+the allocation return. F4 releases the camera lock; F3 toggles rotation and pulses. See [System Regis prototype](docs/SYSTEM-REGIS.md) for controls,
 headless rendering, measured budgets and native interaction tests.
 
 ## Run it
