@@ -12,7 +12,9 @@ form study: Linux-like modularity, a visually rich process/resource tree and a
 living contextual prompt. The latest approved form is a rotating cylindrical
 ASCII tower with process branches, stable labels and a camera that locks on selection. A separate native Rust prototype implements that
 interaction with clearly labelled simulated data. It runs on the Linux host,
-not in QEMU. No further kernel functionality has been added.
+not in QEMU. An opt-in graphics kernel now renders the shared tower geometry after
+ExitBootServices in QEMU; see docs/GRAPHICS-BOOTSTRAP.md. The full process UI
+remains a host prototype.
 
 Start `./scripts/regis-preview.sh`. Read `docs/SYSTEM-REGIS.md` for controls and
 validation. The model is `crates/regis-model` (no_std + alloc), the CPU-rendered
@@ -47,7 +49,8 @@ and report artifacts; preserve them when moving this lab.
 
 This is the boot-and-observation milestone, not a complete OS. There is no
 physical page allocator, scheduler, owned IDT/page tables, VirtIO kernel driver
-or kernel GUI yet. The kernel keeps firmware-provided mappings and stack and
+or full kernel GUI yet. The graphics variant has a framebuffer tower and
+bootstrap Space-key pause/resume, with a polled PIT timer. The kernel keeps firmware-provided mappings and stack and
 halts with maskable interrupts disabled. See docs/HANDOFF-V1.md before adding
 memory reclamation or interrupts. GDB register/memory/disassembly access works;
 relocated Rust source-symbol loading is future work.
@@ -56,3 +59,11 @@ The EutherBoot sibling may contain unrelated uncommitted work. Builds record
 its commit, dirty flag, content hash and source archive. They do not modify the
 sibling checkout or installed EutherBoot. No host boot configuration, disk or
 firmware settings are changed. All acceptance here is virtual TCG execution.
+
+## Graphics continuation
+
+Run `./eutherlab build --variant graphics` and
+`python3 scripts/test-regis-qemu.py` for real dual-VM rendering/input acceptance.
+`crates/regis-scene` is shared no_std geometry; `crates/kernel/src/graphics.rs`
+owns the framebuffer bootstrap. Internal handoff v2 extends the unchanged
+v1 prefix; normal/fault variants retain v1. No graphics baseline promotion.

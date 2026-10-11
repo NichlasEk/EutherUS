@@ -4,9 +4,14 @@ version = "0.0.1"
 edition = "2024"
 
 [dependencies]
+regis-scene = { path = "../regis-scene", optional = true }
 uefi = { version = "=0.40.0", default-features = false }
 
+[build-dependencies]
+fontdue = "=0.9.3"
+
 [features]
+graphics = ["dep:regis-scene"]
 fault-panic = []
 fault-timeout = []
 fault-crash = []

@@ -10,20 +10,7 @@ const Y: i32 = 188;
 const CW: i32 = 8;
 const CH: i32 = 11;
 
-#[derive(Clone, Copy)]
-struct Point {
-    x: f32,
-    y: f32,
-    z: f32,
-}
-#[derive(Clone, Copy)]
-struct Sample {
-    p: Point,
-    nx: f32,
-    nz: f32,
-    ch: char,
-    band: bool,
-}
+use regis_scene::{Point, Projector, Sample, tint};
 #[derive(Clone, Copy)]
 struct Cell {
     depth: f32,
@@ -83,30 +70,6 @@ fn anchor(model: &Model, id: u32) -> Point {
         z: radius * a.cos(),
     }
 }
-fn tint(c: u32, amount: f32) -> u32 {
-    let amount = amount.clamp(0., 1.);
-    (((((c >> 16) & 255) as f32 * amount) as u32) << 16)
-        | (((((c >> 8) & 255) as f32 * amount) as u32) << 8)
-        | (((c & 255) as f32 * amount) as u32)
-}
-struct Projector {
-    sin: f32,
-    cos: f32,
-}
-impl Projector {
-    fn new(angle: f32) -> Self {
-        let (sin, cos) = angle.sin_cos();
-        Self { sin, cos }
-    }
-    fn project(&self, p: Point) -> (f32, f32, f32) {
-        let x = p.x * self.cos + p.z * self.sin;
-        let z = -p.x * self.sin + p.z * self.cos;
-        let y = p.y * 0.978 - z * 0.208;
-        let depth = p.y * 0.208 + z * 0.978;
-        let scale = 650. / (6. - depth);
-        (523. + x * scale, 389. - y * scale, depth)
-    }
-}
 fn write(cells: &mut [Cell], x: f32, y: f32, z: f32, ch: char, color: u32) {
     let col = ((x - X as f32) / CW as f32).floor() as i32;
     let row = ((y - Y as f32) / CH as f32).floor() as i32;
@@ -124,67 +87,7 @@ pub struct Tower {
 impl Tower {
     pub fn new() -> Self {
         let mut samples = Vec::new();
-        for row in 0..83 {
-            let y = -1.5 + row as f32 * 0.036;
-            let radius = if y < -1.27 {
-                1.12
-            } else if y > 1.12 {
-                1.03
-            } else if (row % 17) < 2 {
-                0.95
-            } else {
-                0.86
-            };
-            for column in 0..144 {
-                // Eight crenellations, silhouetted at the crown of the tower.
-                if y > 1.28 && (column / 9) % 2 == 1 {
-                    continue;
-                }
-                let a = column as f32 / 144. * TAU;
-                let (sin, cos) = a.sin_cos();
-                let band = y < -1.27 || y > 1.1 || row % 17 < 2;
-                let ch = if band {
-                    '='
-                } else if row % 6 == 0 {
-                    '-'
-                } else if (column + (row / 6 % 2) * 6) % 12 == 0 {
-                    '|'
-                } else {
-                    '.'
-                };
-                samples.push(Sample {
-                    p: Point {
-                        x: radius * sin,
-                        y,
-                        z: radius * cos,
-                    },
-                    nx: sin,
-                    nz: cos,
-                    ch,
-                    band,
-                });
-            }
-        }
-        // Top and base ledges, sampled as rings so the perspective reads as a cylinder.
-        for (y, outer) in [(1.14, 1.03), (-1.28, 1.12)] {
-            for r in 0..18 {
-                let radius = r as f32 / 17. * outer;
-                for c in 0..144 {
-                    let (sin, cos) = (c as f32 / 144. * TAU).sin_cos();
-                    samples.push(Sample {
-                        p: Point {
-                            x: radius * sin,
-                            y,
-                            z: radius * cos,
-                        },
-                        nx: 0.,
-                        nz: 0.8,
-                        ch: '.',
-                        band: true,
-                    });
-                }
-            }
-        }
+        regis_scene::samples(|sample| samples.push(sample));
         Self {
             angle: -0.48,
             locked: false,

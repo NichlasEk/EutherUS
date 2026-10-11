@@ -24,7 +24,8 @@ ROOT = Path(__file__).resolve().parents[1]
 STATE = ROOT / '.lab'
 ARTIFACTS = ROOT / 'artifacts'
 TARGET = 'x86_64-unknown-uefi'
-VARIANTS = ('normal', 'panic', 'timeout', 'crash')
+BASE_VARIANTS = ('normal', 'panic', 'timeout', 'crash')
+VARIANTS = BASE_VARIANTS + ('graphics',)
 EVENTS = ['uefi_entry', 'boot_services_exited', 'memory_map', 'boot_success']
 LOCKS = threading.local()
 
@@ -116,7 +117,7 @@ def build(eutherboot=None, variant='normal', **_):
         boot_source = identity(repo)
         args = ['cargo', 'build', '--locked', '--release', '--target', TARGET, '-p', 'eutherus-kernel']
         if variant != 'normal':
-            args += ['--features', 'fault-' + variant]
+            args += ['--features', 'graphics' if variant == 'graphics' else 'fault-' + variant]
         run(args, env=env)
         build_id = uuid.uuid4().hex[:16]
         dest = ARTIFACTS / 'builds' / build_id
@@ -583,7 +584,7 @@ def test(suite='smoke', timeout=30, promote=False, **_):
         raise ValueError('suite must be smoke or full')
     if not isinstance(timeout, (int, float)) or not 0 < timeout <= 600:
         raise ValueError('timeout must be between 0 and 600 seconds')
-    variants = VARIANTS if suite == 'full' else ('normal',)
+    variants = BASE_VARIANTS if suite == 'full' else ('normal',)
     manifests = {v: read_json(STATE / ('build-' + v + '.json')) for v in variants}
     baseline = manifests['normal']
     if any(m['source'] != baseline['source'] for m in manifests.values()):

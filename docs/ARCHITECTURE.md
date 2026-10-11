@@ -90,3 +90,10 @@ Fresh reset reconstructs variables and disk from the original immutable build.
 - [uefi 0.40 ExitBootServices wrapper](https://docs.rs/uefi/0.40.0/uefi/boot/fn.exit_boot_services.html)
 - [UEFI boot services specification](https://uefi.org/specs/UEFI/2.10/07_Services_Boot_Services.html)
 - [QEMU QMP commands and events](https://www.qemu.org/docs/master/interop/qemu-qmp-ref.html)
+
+## Optional graphics path
+
+The `graphics` variant extends internal BootInfo to v2 and enters a framebuffer
+render loop after boot success instead of halting. The normal and fault variants
+retain v1. See [graphics bootstrap](GRAPHICS-BOOTSTRAP.md) for the exact layout,
+shared Rust scene, device assumptions and separate acceptance suite.

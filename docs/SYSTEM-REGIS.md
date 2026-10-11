@@ -143,3 +143,10 @@ Do not relabel the simulation as real kernel telemetry when connecting them.
 Implementation references:
 [Minifb](https://docs.rs/minifb/0.28.0/minifb/) and
 [Fontdue](https://docs.rs/fontdue/0.9.3/fontdue/).
+
+## Kernel rendering step
+
+The host prototype remains the complete interaction study. Its tower geometry
+is now shared through `regis-scene` with an optional QEMU kernel renderer.
+The kernel screen currently shows the tower and Space pause/resume, without
+process branches or the prompt. See [graphics bootstrap](GRAPHICS-BOOTSTRAP.md).

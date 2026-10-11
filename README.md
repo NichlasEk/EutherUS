@@ -123,3 +123,9 @@ not merge or become the Git main branch automatically.
 See [architecture](docs/ARCHITECTURE.md), [handoff v1](docs/HANDOFF-V1.md),
 [JSON API](docs/API.md), [agent workflows](docs/AGENTS.md), and
 [current handoff](HANDOFF.md).
+
+## Kernel graphics experiment
+
+The ASCII tower also runs after EutherBoot and ExitBootServices in the optional
+`graphics` kernel variant. See [graphics bootstrap](docs/GRAPHICS-BOOTSTRAP.md)
+for build commands, real QEMU keyboard/pixel tests and current limitations.

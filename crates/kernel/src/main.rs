@@ -47,10 +47,14 @@ impl Write for Serial {
 }
 macro_rules! serial { ($($arg:tt)*) => { let _ = writeln!(Serial, $($arg)*); }; }
 
-/// EutherUS internal handoff v1. The UEFI entry and kernel share one PE image.
+#[cfg(feature = "graphics")]
+mod graphics;
+
+/// Internal handoff: v1 prefix, with a v2 framebuffer extension for graphics.
+/// The UEFI entry and kernel share one PE image.
 /// All addresses are identity-mapped; memory remains reserved for this image.
 #[repr(C)]
-struct BootInfoV1 {
+struct BootInfo {
     magic: [u8; 8],
     version: u32,
     size: u32,
@@ -59,27 +63,36 @@ struct BootInfoV1 {
     descriptor_size: u64,
     descriptor_version: u32,
     reserved: u32,
+    #[cfg(feature = "graphics")]
+    framebuffer: graphics::Framebuffer,
 }
+
+const _: () =
+    assert!(core::mem::size_of::<BootInfo>() == if cfg!(feature = "graphics") { 96 } else { 48 });
 
 #[entry]
 fn main() -> Status {
     serial_init();
     serial!(r#"{{"protocol":"eutherus.boot","version":1,"event":"uefi_entry"}}"#);
     boot::set_watchdog_timer(0, 0, None).expect("watchdog disable");
+    #[cfg(feature = "graphics")]
+    let framebuffer = graphics::prepare();
     // No firmware protocol borrows or asynchronous callbacks remain. The
     // returned map owns firmware-allocated LOADER_DATA. It is never dropped.
     let map = unsafe { boot::exit_boot_services(None) };
     unsafe { asm!("cli", options(nomem, nostack)) };
     let meta = map.meta();
-    let info = BootInfoV1 {
+    let info = BootInfo {
         magic: *b"EUTHERUS",
-        version: 1,
-        size: core::mem::size_of::<BootInfoV1>() as u32,
+        version: if cfg!(feature = "graphics") { 2 } else { 1 },
+        size: core::mem::size_of::<BootInfo>() as u32,
         memory_map: map.buffer().as_ptr() as u64,
         memory_map_bytes: map.buffer().len() as u64,
         descriptor_size: meta.desc_size as u64,
         descriptor_version: meta.desc_version,
         reserved: 0,
+        #[cfg(feature = "graphics")]
+        framebuffer,
     };
     core::mem::forget(map);
     kernel_main(&info)
@@ -87,8 +100,12 @@ fn main() -> Status {
 
 #[unsafe(no_mangle)]
 #[inline(never)]
-extern "C" fn kernel_main(info: &BootInfoV1) -> ! {
-    assert!(info.magic == *b"EUTHERUS" && info.version == 1);
+extern "C" fn kernel_main(info: &BootInfo) -> ! {
+    assert!(
+        info.magic == *b"EUTHERUS"
+            && info.version == if cfg!(feature = "graphics") { 2 } else { 1 }
+    );
+    assert_eq!(info.size as usize, core::mem::size_of::<BootInfo>());
     serial!("EutherUS 0.0.1 — System Regis kernel initialized");
     serial!(r#"{{"protocol":"eutherus.boot","version":1,"event":"boot_services_exited"}}"#);
     assert!(info.memory_map_bytes > 0 && info.descriptor_size >= 40);
@@ -109,8 +126,12 @@ extern "C" fn kernel_main(info: &BootInfoV1) -> ! {
         unsafe { asm!("lidt [{}]", "int3", in(reg) idtr.as_ptr(), options(nostack)) };
     }
     serial!(
-        r#"{{"protocol":"eutherus.boot","version":1,"event":"boot_success","kernel":"0.0.1","handoff":1}}"#
+        r#"{{"protocol":"eutherus.boot","version":1,"event":"boot_success","kernel":"0.0.1","handoff":{}}}"#,
+        info.version
     );
+    #[cfg(feature = "graphics")]
+    graphics::run(&info.framebuffer);
+    #[cfg(not(feature = "graphics"))]
     halt()
 }
 fn halt() -> ! {
