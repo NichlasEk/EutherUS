@@ -21,6 +21,20 @@ allocation, interrupt handling, scheduling and a graphical desktop are future
 milestones. The firmware screen remains visible; screenshot support does not
 imply a kernel graphics driver.
 
+## System Regis graphical form study
+
+A separate native Rust prototype explores the living process tree, contextual
+prompt, activity traces and memory ownership. It runs on the Linux host with
+**clearly labelled simulated data**, not inside the QEMU kernel.
+
+```sh
+./scripts/regis-preview.sh
+```
+
+Click a node, type `start Aurora 16`, try `alloc 8`, then `stop` and watch the
+allocation return. See [System Regis prototype](docs/SYSTEM-REGIS.md) for controls,
+headless rendering, measured budgets and native interaction tests.
+
 ## Run it
 
 Required host tools: Python 3.11+, Git, QEMU system x86 and `qemu-img`, OVMF,

@@ -7,11 +7,21 @@ EutherUS source tree. No push is part of this milestone.
 
 ## Current scope
 
-The user has approved completing the lab as the starting point. Further OS
-architecture and kernel functionality wait for a discussion of premises.
-The Rust kernel is a minimal executable test payload for the lab. It does not
-settle process, application, security, driver or user-interface architecture.
-The current host controller uses Python's standard library.
+The lab milestone is complete. The user has now approved a first System Regis
+form study: Linux-like modularity, a visually rich process/resource tree and a
+living contextual prompt. A separate native Rust prototype implements that
+interaction with clearly labelled simulated data. It runs on the Linux host,
+not in QEMU. No further kernel functionality has been added.
+
+Start `./scripts/regis-preview.sh`. Read `docs/SYSTEM-REGIS.md` for controls and
+validation. The model is `crates/regis-model` (no_std + alloc), the CPU-rendered
+native viewer is `crates/regis-preview`. Screenshots, host render benchmark and
+native keyboard/mouse evidence are under ignored `artifacts/regis/`.
+
+The approved baseline at `.lab/known-good.json` remains the original serial lab
+milestone. Preview changes do not promote a new kernel baseline. The Rust
+bootstrap and the Python host controller retain their existing responsibilities.
+Further OS process, application, security and driver architecture remain open.
 
 ## Reproduce
 
