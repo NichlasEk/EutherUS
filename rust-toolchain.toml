@@ -1,0 +1,5 @@
+[toolchain]
+channel = "nightly-2026-10-01"
+profile = "minimal"
+components = ["rustfmt"]
+targets = ["x86_64-unknown-uefi"]

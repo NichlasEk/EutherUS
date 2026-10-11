@@ -1,0 +1,12 @@
+[package]
+name = "eutherus-kernel"
+version = "0.0.1"
+edition = "2024"
+
+[dependencies]
+uefi = { version = "=0.40.0", default-features = false }
+
+[features]
+fault-panic = []
+fault-timeout = []
+fault-crash = []

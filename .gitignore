@@ -1,0 +1,7 @@
+/target/
+/.tools/
+/.lab/
+/artifacts/
+/worktrees/
+__pycache__/
+*.pyc
