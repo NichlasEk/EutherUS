@@ -18,6 +18,19 @@ class ProtocolTests(unittest.TestCase):
         ]))
         self.assertEqual([e['event'] for e in lab.events(text)], ['panic'])
 
+    def test_cpu_exception_overrides_prior_boot_success(self):
+        boot = [dict(protocol='eutherus.boot', version=1, event=event) for event in lab.EVENTS]
+        fault = dict(protocol='eutherus.cpu', version=1, event='exception', vector=14)
+        output = 'EutherUS 0.0.1\n' + '\n'.join(map(json.dumps, boot+[fault]))
+        state = dict(build={}, config={}, argv=[])
+        with patch.object(lab, 'load_vm', return_value=state), \
+             patch.object(lab, 'alive', return_value=True), \
+             patch.object(lab, 'logs', return_value={'serial': output}):
+            observed = lab.observe('exception-after-boot')
+        self.assertEqual(observed['outcome'], 'exception')
+        self.assertEqual(observed['cpu_events'], [fault])
+        self.assertEqual([e['event'] for e in observed['events']], lab.EVENTS)
+
     def test_traversal_and_invalid_names(self):
         for name in ('../outside', '/tmp/host', '', 'a/b', 'x' * 25, 'a\n'):
             with self.subTest(name=name), self.assertRaises(ValueError):

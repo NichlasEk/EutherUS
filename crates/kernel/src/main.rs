@@ -1,5 +1,6 @@
 #![no_std]
 #![no_main]
+#![cfg_attr(feature = "interrupts", feature(abi_x86_interrupt))]
 
 use core::{
     arch::asm,
@@ -49,6 +50,8 @@ macro_rules! serial { ($($arg:tt)*) => { let _ = writeln!(Serial, $($arg)*); }; 
 
 #[cfg(feature = "graphics")]
 mod graphics;
+#[cfg(feature = "interrupts")]
+mod interrupts;
 
 /// Internal handoff: v1 prefix, with a v2 framebuffer extension for graphics.
 /// The UEFI entry and kernel share one PE image.
@@ -95,6 +98,11 @@ fn main() -> Status {
         framebuffer,
     };
     core::mem::forget(map);
+    #[cfg(feature = "interrupts")]
+    unsafe {
+        interrupts::enter(&info)
+    }
+    #[cfg(not(feature = "interrupts"))]
     kernel_main(&info)
 }
 
@@ -114,6 +122,11 @@ extern "C" fn kernel_main(info: &BootInfo) -> ! {
         info.memory_map_bytes,
         info.descriptor_size
     );
+    #[cfg(feature = "interrupts")]
+    {
+        interrupts::init();
+        interrupts::inject_faults();
+    }
     if cfg!(feature = "fault-panic") {
         panic!("injected panic");
     }
@@ -131,7 +144,9 @@ extern "C" fn kernel_main(info: &BootInfo) -> ! {
     );
     #[cfg(feature = "graphics")]
     graphics::run(&info.framebuffer);
-    #[cfg(not(feature = "graphics"))]
+    #[cfg(all(feature = "interrupts", not(feature = "graphics")))]
+    interrupts::idle();
+    #[cfg(not(feature = "interrupts"))]
     halt()
 }
 fn halt() -> ! {

@@ -11,7 +11,13 @@ uefi = { version = "=0.40.0", default-features = false }
 fontdue = "=0.9.3"
 
 [features]
-graphics = ["dep:regis-scene"]
+graphics = ["dep:regis-scene", "interrupts"]
+interrupts = []
+fault-timer-masked = ["interrupts"]
+fault-invalid-opcode = ["interrupts"]
+fault-page-fault = ["interrupts"]
+fault-general-protection = ["interrupts"]
+fault-double-fault = ["interrupts"]
 fault-panic = []
 fault-timeout = []
 fault-crash = []

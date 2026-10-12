@@ -102,21 +102,8 @@ unsafe fn input(port: u16) -> u8 {
     }
     value
 }
-/// Temporary 20 Hz pacing using polled PIT channel 2; no speaker output enabled.
-/// This burns guest CPU while waiting. Replace with owned timer/interrupts later.
 fn wait_frame() {
-    unsafe {
-        let control = input(0x61) & !3;
-        super::out(0x61, control);
-        super::out(0x43, 0xb0);
-        let count = 59659u16;
-        super::out(0x42, count as u8);
-        super::out(0x42, (count >> 8) as u8);
-        super::out(0x61, control | 1);
-        while input(0x61) & 0x20 == 0 {
-            core::hint::spin_loop();
-        }
-    }
+    super::interrupts::wait_ticks(5);
 }
 pub fn run(fb: &Framebuffer) -> ! {
     assert!(fb.width == 1024 && fb.height == 768 && fb.stride >= fb.width);
@@ -195,12 +182,7 @@ pub fn run(fb: &Framebuffer) -> ! {
                 canvas.glyph(54 + i % 118 * 8, 188 + i / 118 * 11, glyphs[i], colors[i]);
             }
         }
-        canvas.text(
-            48,
-            642,
-            "SHARED RUST ASCII GEOMETRY / NO GPU DRIVER",
-            0xe9ca8c,
-        );
+        canvas.text(48, 642, "SHARED ASCII GEOMETRY / IRQ TIMER + HLT", 0xe9ca8c);
         canvas.text(48, 666, "SPACE: PAUSE / RESUME ROTATION", 0x77cfc6);
         canvas.text(
             48,
@@ -241,10 +223,12 @@ pub fn run(fb: &Framebuffer) -> ! {
         }
         if frame % 20 == 0 {
             serial!(
-                r#"{{"protocol":"eutherus.graphics","version":1,"event":"frame_presented","frame":{},"paused":{},"angle_milliradians":{}}}"#,
+                r#"{{"protocol":"eutherus.graphics","version":1,"event":"frame_presented","frame":{},"paused":{},"angle_milliradians":{},"timer_ticks":{},"halt_waits":{}}}"#,
                 frame,
                 paused,
-                (angle * 1000.0) as i32
+                (angle * 1000.0) as i32,
+                super::interrupts::ticks(),
+                super::interrupts::waits()
             );
         }
         frame += 1;

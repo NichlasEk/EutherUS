@@ -22,8 +22,11 @@ and specifying the calling convention for that loader.
 
 Boot services have exited. The descriptor buffer is retained as LOADER_DATA
 and is never freed. The BootInfo object lives on the retained firmware-provided
-stack for the lifetime of the kernel's non-returning entry. Firmware page
+stack for the lifetime of the kernel's non-returning entry. For the original serial baseline, firmware page
 tables, stack, GDT and IDT remain installed; maskable interrupts are disabled.
+The opt-in `interrupts` feature switches to an owned execution stack and installs
+GDT/TSS/IDT plus timer interrupts; BootInfo stays on the retained firmware stack.
+This preserves the input layout and Win64 entry ABI. See [CPU bootstrap](CPU-BOOTSTRAP.md).
 The kernel does not reclaim memory or invoke boot/runtime services. Addresses
 use the existing identity mapping. These constraints deliberately bound the
 bootstrap; they are not a general-purpose memory-manager contract.

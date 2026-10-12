@@ -25,7 +25,7 @@ STATE = ROOT / '.lab'
 ARTIFACTS = ROOT / 'artifacts'
 TARGET = 'x86_64-unknown-uefi'
 BASE_VARIANTS = ('normal', 'panic', 'timeout', 'crash')
-VARIANTS = BASE_VARIANTS + ('graphics',)
+VARIANTS = BASE_VARIANTS + ('graphics', 'interrupts', 'invalid-opcode', 'page-fault', 'general-protection', 'double-fault', 'timer-masked')
 EVENTS = ['uefi_entry', 'boot_services_exited', 'memory_map', 'boot_success']
 LOCKS = threading.local()
 
@@ -117,7 +117,7 @@ def build(eutherboot=None, variant='normal', **_):
         boot_source = identity(repo)
         args = ['cargo', 'build', '--locked', '--release', '--target', TARGET, '-p', 'eutherus-kernel']
         if variant != 'normal':
-            args += ['--features', 'graphics' if variant == 'graphics' else 'fault-' + variant]
+            args += ['--features', variant if variant in ('graphics', 'interrupts') else 'fault-' + variant]
         run(args, env=env)
         build_id = uuid.uuid4().hex[:16]
         dest = ARTIFACTS / 'builds' / build_id
@@ -373,14 +373,14 @@ def logs(vm='kernel-test', **_):
     return contents
 
 
-def events(text):
+def events(text, protocol='eutherus.boot'):
     found = []
     for line in text.splitlines():
         try:
             item = json.loads(line)
         except ValueError:
             continue
-        if isinstance(item, dict) and item.get('protocol') == 'eutherus.boot' and item.get('version') == 1:
+        if isinstance(item, dict) and item.get('protocol') == protocol and item.get('version') == 1:
             found.append(item)
     return found
 
@@ -394,7 +394,9 @@ def status(vm='kernel-test', **_):
         if running:
             with QMP(s['qmp']) as q:
                 result['qemu'] = q.command('query-status')
-        result['events'] = events(logs(vm)['serial'])
+        serial = logs(vm)['serial']
+        result['events'] = events(serial)
+        result['cpu_events'] = events(serial, 'eutherus.cpu')
         return result
 
 
@@ -527,9 +529,12 @@ def observe(vm, timeout=30):
         s = load_vm(vm)
         output = logs(vm)
         parsed = events(output['serial'])
+        cpu_events = events(output['serial'], 'eutherus.cpu')
         names = [e['event'] for e in parsed if 'event' in e]
         if 'panic' in names:
             outcome = 'panic'
+        elif any(e.get('event') == 'exception' for e in cpu_events):
+            outcome = 'exception'
         elif not alive(s):
             outcome = 'crash'
         elif 'boot_success' in names:
@@ -547,7 +552,7 @@ def observe(vm, timeout=30):
                     exit_code = os.waitstatus_to_exitcode(wait_status)
             except ChildProcessError:
                 pass
-        return {'outcome': outcome, 'events': parsed, 'elapsed_seconds': time.monotonic() - started,
+        return {'outcome': outcome, 'events': parsed, 'cpu_events': cpu_events, 'elapsed_seconds': time.monotonic() - started,
                 'logs': output, 'build': s['build'], 'config': s['config'],
                 'qemu_argv': s['argv'], 'exit_code': exit_code}
 

@@ -97,3 +97,10 @@ The `graphics` variant extends internal BootInfo to v2 and enters a framebuffer
 render loop after boot success instead of halting. The normal and fault variants
 retain v1. See [graphics bootstrap](GRAPHICS-BOOTSTRAP.md) for the exact layout,
 shared Rust scene, device assumptions and separate acceptance suite.
+
+## Owned CPU state experiment
+
+`graphics` now includes `interrupts`: private stack/GDT/TSS/IDT, double-fault
+IST and PIT/PIC timer wakeups using HLT. The serial-only `interrupts` variant
+and four CPU-fault variants plus `timer-masked` have a separate real-QEMU suite.
+See [CPU bootstrap](CPU-BOOTSTRAP.md); firmware page tables remain retained.

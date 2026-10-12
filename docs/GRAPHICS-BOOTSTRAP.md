@@ -63,12 +63,13 @@ possible. `eutherus.graphics` v1 `frame_presented` diagnostics every 20 frames
 report the frame number, pause state and angle in milliradians. They are
 separate from the unchanged `eutherus.boot` v1 event protocol.
 
-A polled PIT channel 2 provides a nominal 50 ms wait **in addition to render
-time**, with the speaker disabled. This is not a measured 20 FPS claim. Polling
-consumes guest CPU; it is temporary until we own the IDT and timer interrupts.
+PIT channel 0 now drives an owned IRQ handler at nominally 100 Hz. The renderer
+waits five ticks with `sti; hlt`, **in addition to render time**. This is not a
+measured 20 FPS claim. See [CPU bootstrap](CPU-BOOTSTRAP.md) for the owned stack,
+GDT/TSS/IDT and actual exception/timer acceptance.
 Keyboard handling is deliberately limited to Q35's translated PS/2 Space
 make/break codes, with typematic suppression. There is no general input driver,
 mouse, Unicode text input, power management or physical-hardware acceptance.
 
-Next foundation: owned stack/exception handling, memory reservations and timer
-interrupts before a scheduler and genuine process telemetry feed the tower.
+Next foundation: explicit memory reservations and owned page tables before a
+scheduler and genuine process telemetry feed the tower.

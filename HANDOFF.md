@@ -48,10 +48,12 @@ and report artifacts; preserve them when moving this lab.
 ## Boundaries
 
 This is the boot-and-observation milestone, not a complete OS. There is no
-physical page allocator, scheduler, owned IDT/page tables, VirtIO kernel driver
+physical page allocator, scheduler, owned page tables, VirtIO kernel driver
 or full kernel GUI yet. The graphics variant has a framebuffer tower and
-bootstrap Space-key pause/resume, with a polled PIT timer. The kernel keeps firmware-provided mappings and stack and
-halts with maskable interrupts disabled. See docs/HANDOFF-V1.md before adding
+bootstrap Space-key pause/resume, with an interrupt-driven PIT timer. The
+`interrupts` and graphics variants have owned stacks, GDT/TSS/IDT and HLT waits;
+the original normal/fault baseline still retains firmware CPU state and halts
+with interrupts disabled. All variants retain firmware page tables. See docs/HANDOFF-V1.md before adding
 memory reclamation or interrupts. GDB register/memory/disassembly access works;
 relocated Rust source-symbol loading is future work.
 
@@ -67,3 +69,12 @@ Run `./eutherlab build --variant graphics` and
 `crates/regis-scene` is shared no_std geometry; `crates/kernel/src/graphics.rs`
 owns the framebuffer bootstrap. Internal handoff v2 extends the unchanged
 v1 prefix; normal/fault variants retain v1. No graphics baseline promotion.
+
+## Owned CPU state continuation
+
+Read `docs/CPU-BOOTSTRAP.md`. `python3 scripts/test-interrupts-qemu.py --build`
+checks timer wakeups, installed table/stack registers, warm reset, UD/GP/PF/DF
+exceptions and the masked-timer negative control in actual TCG VMs. The latest
+report pointer is `artifacts/interrupts-latest.json`. Graphics acceptance also
+requires tick/HLT-wait progress. Memory reclamation and a real process model
+remain outstanding; no experimental baseline was promoted.

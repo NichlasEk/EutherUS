@@ -30,6 +30,7 @@ def wait_frame(vm, after=-1, paused=None):
     while time.monotonic() < deadline:
         assert lab.alive(lab.load_vm(vm)), 'VM exited'
         assert not any(e['event'] == 'panic' for e in lab.events(lab.logs(vm)['serial'])), 'kernel panic'
+        assert not any(e.get('event') == 'exception' for e in lab.events(lab.logs(vm)['serial'], 'eutherus.cpu')), 'CPU exception'
         for event in frames(vm):
             if event['frame'] > after and (paused is None or event['paused'] == paused):
                 return event
@@ -75,6 +76,8 @@ def main():
         second = wait_frame(names[0], first['frame'])
         report['captures'].append(capture(names[0], out/'running-b.ppm'))
         assert first['angle_milliradians'] != second['angle_milliradians']
+        assert second['timer_ticks'] > first['timer_ticks']
+        assert second['halt_waits'] > first['halt_waits']
         assert report['captures'][0]['tower_sha256'] != report['captures'][1]['tower_sha256']
         space(names[0])
         paused = wait_frame(names[0], second['frame'], True)
@@ -95,7 +98,7 @@ def main():
             result = lab.observe(name)
             assert result['outcome'] == 'pass'
             assert result['events'][-1]['handoff'] == 2
-        report['checks'] = ['boot_handoff_v2', 'visible_tower', 'rotation', 'keyboard_pause',
+        report['checks'] = ['boot_handoff_v2', 'interrupt_timer_progress', 'halt_wait_progress', 'visible_tower', 'rotation', 'keyboard_pause',
                             'stable_paused_pixels', 'keyboard_resume', 'two_concurrent_graphics_vms', 'input_isolation']
         report['passed'] = True
     except Exception as error:

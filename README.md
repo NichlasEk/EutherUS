@@ -129,3 +129,7 @@ See [architecture](docs/ARCHITECTURE.md), [handoff v1](docs/HANDOFF-V1.md),
 The ASCII tower also runs after EutherBoot and ExitBootServices in the optional
 `graphics` kernel variant. See [graphics bootstrap](docs/GRAPHICS-BOOTSTRAP.md)
 for build commands, real QEMU keyboard/pixel tests and current limitations.
+
+The graphics kernel now uses an owned interrupt timer and HLT waiting.
+[CPU bootstrap](docs/CPU-BOOTSTRAP.md) documents the stack, exception handlers
+and `python3 scripts/test-interrupts-qemu.py --build` acceptance suite.
