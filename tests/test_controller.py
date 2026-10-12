@@ -31,6 +31,17 @@ class ProtocolTests(unittest.TestCase):
         self.assertEqual(observed['cpu_events'], [fault])
         self.assertEqual([e['event'] for e in observed['events']], lab.EVENTS)
 
+    def test_memory_failure_is_not_hidden_by_boot_success(self):
+        boot = [dict(protocol='eutherus.boot', version=1, event=e) for e in lab.EVENTS]
+        oom = dict(protocol='eutherus.memory', version=1, event='out_of_memory', requested_pages=1)
+        output = 'EutherUS 0.0.1\n' + '\n'.join(map(json.dumps, boot+[oom]))
+        with patch.object(lab, 'load_vm', return_value=dict(build={}, config={}, argv=[])), \
+             patch.object(lab, 'alive', return_value=True), \
+             patch.object(lab, 'logs', return_value={'serial': output}):
+            observed = lab.observe('oom-after-boot')
+        self.assertEqual(observed['outcome'], 'out_of_memory')
+        self.assertEqual(observed['memory_events'], [oom])
+
     def test_traversal_and_invalid_names(self):
         for name in ('../outside', '/tmp/host', '', 'a/b', 'x' * 25, 'a\n'):
             with self.subTest(name=name), self.assertRaises(ValueError):

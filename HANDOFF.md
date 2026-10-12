@@ -48,7 +48,7 @@ and report artifacts; preserve them when moving this lab.
 ## Boundaries
 
 This is the boot-and-observation milestone, not a complete OS. There is no
-physical page allocator, scheduler, owned page tables, VirtIO kernel driver
+scheduler, owned page tables, VirtIO kernel driver
 or full kernel GUI yet. The graphics variant has a framebuffer tower and
 bootstrap Space-key pause/resume, with an interrupt-driven PIT timer. The
 `interrupts` and graphics variants have owned stacks, GDT/TSS/IDT and HLT waits;
@@ -67,8 +67,8 @@ firmware settings are changed. All acceptance here is virtual TCG execution.
 Run `./eutherlab build --variant graphics` and
 `python3 scripts/test-regis-qemu.py` for real dual-VM rendering/input acceptance.
 `crates/regis-scene` is shared no_std geometry; `crates/kernel/src/graphics.rs`
-owns the framebuffer bootstrap. Internal handoff v2 extends the unchanged
-v1 prefix; normal/fault variants retain v1. No graphics baseline promotion.
+owns the framebuffer bootstrap. Internal handoff v3 carries image bounds and framebuffer metadata for the
+physical allocator; normal/CPU-fault variants retain v1. No graphics baseline promotion.
 
 ## Owned CPU state continuation
 
@@ -78,3 +78,13 @@ exceptions and the masked-timer negative control in actual TCG VMs. The latest
 report pointer is `artifacts/interrupts-latest.json`. Graphics acceptance also
 requires tick/HLT-wait progress. Memory reclamation and a real process model
 remain outstanding; no experimental baseline was promoted.
+
+## Physical memory continuation
+
+`docs/MEMORY-BOOTSTRAP.md` describes the no_std `regis-memory` frame allocator,
+explicit reservations and retained-mapping checks. Graphics obtains its 6 MiB
+arena from the kernel allocator and shows real pool/arena sizes. Run
+`python3 scripts/test-memory-qemu.py --build`; latest report pointer is
+`artifacts/memory-latest.json`. Internal handoff v3 is 112 bytes.
+Only conventional, writable identity-mapped pages below 1 GiB are eligible; no
+firmware pages are reclaimed. Own mappings/guard pages are the next foundation.

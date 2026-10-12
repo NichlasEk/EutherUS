@@ -93,7 +93,7 @@ Fresh reset reconstructs variables and disk from the original immutable build.
 
 ## Optional graphics path
 
-The `graphics` variant extends internal BootInfo to v2 and enters a framebuffer
+The `graphics` variant uses internal BootInfo v3 and enters a framebuffer
 render loop after boot success instead of halting. The normal and fault variants
 retain v1. See [graphics bootstrap](GRAPHICS-BOOTSTRAP.md) for the exact layout,
 shared Rust scene, device assumptions and separate acceptance suite.
@@ -104,3 +104,9 @@ shared Rust scene, device assumptions and separate acceptance suite.
 IST and PIT/PIC timer wakeups using HLT. The serial-only `interrupts` variant
 and four CPU-fault variants plus `timer-masked` have a separate real-QEMU suite.
 See [CPU bootstrap](CPU-BOOTSTRAP.md); firmware page tables remain retained.
+
+## Physical memory experiment
+
+`memory` adds conventional-frame allocation, explicit reservations and an audit
+of retained mappings. `graphics` consumes a kernel-allocated arena. See
+[memory bootstrap](MEMORY-BOOTSTRAP.md) for v3, bounds and real-QEMU tests.

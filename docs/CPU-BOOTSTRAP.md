@@ -3,7 +3,8 @@
 The `interrupts` feature (also enabled by `graphics`) installs an EutherUS
 stack, GDT, TSS and IDT after ExitBootServices. The original `normal`, `panic`,
 `timeout` and `crash` builds remain the small serial baseline. EutherBoot and
-the internal BootInfo layouts do not change in this step.
+the internal BootInfo layouts did not change in the CPU step. The later
+`memory` feature uses v3, documented in MEMORY-BOOTSTRAP.md.
 
 ## Ownership and startup
 
@@ -87,12 +88,14 @@ serial logs, register observations and cleanup. Find the latest CPU report via
 This is a single-core Q35/OVMF TCG bootstrap using the legacy PIC routing supplied
 by that platform. APIC/IOAPIC setup, SMP, userspace, scheduling and preemption are
 not implemented. Firmware page tables and all allocations remain retained;
-there is no page allocator, reclamation or stack guard page. The reserved static
+the optional `memory` feature now provides a conservative conventional-memory
+page allocator. There is still no firmware reclamation or stack guard page. The reserved static
 stacks and descriptor tables are part of the kernel image, not free RAM.
 NMI recovery and arbitrary physical platform startup are not acceptance claims.
 
-Next: explicit memory-map reservations and an allocator with owned page tables,
-including guard pages, before allowing processes or reclaiming firmware memory.
+See [memory bootstrap](MEMORY-BOOTSTRAP.md) for reservations and allocation.
+Next: owned page tables and guard pages before allowing processes or reclaiming
+firmware memory.
 The System Regis process tree remains simulated in the host preview.
 
 ## Primary references

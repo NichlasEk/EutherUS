@@ -97,8 +97,19 @@ def main():
         for name in names:
             result = lab.observe(name)
             assert result['outcome'] == 'pass'
-            assert result['events'][-1]['handoff'] == 2
-        report['checks'] = ['boot_handoff_v2', 'interrupt_timer_progress', 'halt_wait_progress', 'visible_tower', 'rotation', 'keyboard_pause',
+            assert result['events'][-1]['handoff'] == 3
+        for name in names:
+            memory = lab.status(name)['memory_events']
+            ready = next(e for e in memory if e['event'] == 'allocator_ready')
+            passed = next(e for e in memory if e['event'] == 'self_test_pass')
+            arena = next(e for e in memory if e['event'] == 'graphics_allocated')
+            assert arena['pages'] == 1536 and arena['address'] % 4096 == 0
+            assert arena['free_pages'] + arena['pages'] == ready['free_pages']
+            assert passed['restored_pages'] == ready['free_pages']
+            for r in memory:
+                if r['event'] == 'reserved':
+                    assert arena['address']+arena['pages']*4096 <= r['start'] or r['start']+r['bytes'] <= arena['address']
+        report['checks'] = ['boot_handoff_v3', 'allocator_owned_graphics_arena', 'interrupt_timer_progress', 'halt_wait_progress', 'visible_tower', 'rotation', 'keyboard_pause',
                             'stable_paused_pixels', 'keyboard_resume', 'two_concurrent_graphics_vms', 'input_isolation']
         report['passed'] = True
     except Exception as error:

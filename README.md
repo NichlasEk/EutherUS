@@ -133,3 +133,8 @@ for build commands, real QEMU keyboard/pixel tests and current limitations.
 The graphics kernel now uses an owned interrupt timer and HLT waiting.
 [CPU bootstrap](docs/CPU-BOOTSTRAP.md) documents the stack, exception handlers
 and `python3 scripts/test-interrupts-qemu.py --build` acceptance suite.
+
+The [physical memory bootstrap](docs/MEMORY-BOOTSTRAP.md) now supplies the
+graphics arena from a tested page allocator. Run
+`python3 scripts/test-memory-qemu.py --build` for RAM patterns, reservations,
+exhaustion, invalid-map/OOM handling, reset and concurrent VM checks.

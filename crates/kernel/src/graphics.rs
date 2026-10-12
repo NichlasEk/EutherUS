@@ -7,19 +7,7 @@ use uefi::{
     proto::console::gop::{GraphicsOutput, PixelFormat},
 };
 
-/// Internal handoff extension v2; all addresses refer to retained mappings.
-#[derive(Clone, Copy)]
-#[repr(C)]
-pub struct Framebuffer {
-    pub address: u64,
-    pub bytes: u64,
-    pub back_buffer: u64,
-    pub back_buffer_bytes: u64,
-    pub width: u32,
-    pub height: u32,
-    pub stride: u32,
-    pub format: u32, // 0: RGB bytes, 1: BGR bytes. Other formats rejected.
-}
+use crate::Framebuffer;
 pub fn prepare() -> Framebuffer {
     let handle = boot::get_handle_for_protocol::<GraphicsOutput>().expect("GOP handle");
     let mut gop = boot::open_protocol_exclusive::<GraphicsOutput>(handle).expect("GOP open");
@@ -34,19 +22,11 @@ pub fn prepare() -> Framebuffer {
     let info = gop.current_mode_info();
     let (width, height) = info.resolution();
     let mut fb = gop.frame_buffer();
-    let bytes = width.checked_mul(height).unwrap().checked_mul(4).unwrap();
-    let pages = (bytes * 2).div_ceil(4096);
-    let back = boot::allocate_pages(
-        boot::AllocateType::AnyPages,
-        boot::MemoryType::LOADER_DATA,
-        pages,
-    )
-    .expect("back buffer");
     let descriptor = Framebuffer {
         address: fb.as_mut_ptr() as u64,
         bytes: fb.size() as u64,
-        back_buffer: back.as_ptr() as u64,
-        back_buffer_bytes: (pages * 4096) as u64,
+        back_buffer: 0,
+        back_buffer_bytes: 0,
         width: width as u32,
         height: height as u32,
         stride: info.stride() as u32,
@@ -105,7 +85,34 @@ unsafe fn input(port: u16) -> u8 {
 fn wait_frame() {
     super::interrupts::wait_ticks(5);
 }
-pub fn run(fb: &Framebuffer) -> ! {
+pub fn run(fb: &Framebuffer, free_pages: usize) -> ! {
+    struct Label {
+        bytes: [u8; 96],
+        len: usize,
+    }
+    impl Write for Label {
+        fn write_str(&mut self, text: &str) -> core::fmt::Result {
+            let end = self.len + text.len();
+            if end > self.bytes.len() {
+                return Err(core::fmt::Error);
+            }
+            self.bytes[self.len..end].copy_from_slice(text.as_bytes());
+            self.len = end;
+            Ok(())
+        }
+    }
+    let mut label = Label {
+        bytes: [0; 96],
+        len: 0,
+    };
+    write!(
+        label,
+        "PAGE POOL FREE: {} KiB / FRAME ARENA: {} KiB",
+        free_pages * 4,
+        fb.back_buffer_bytes / 1024
+    )
+    .unwrap();
+    let memory_label = core::str::from_utf8(&label.bytes[..label.len]).unwrap();
     assert!(fb.width == 1024 && fb.height == 768 && fb.stride >= fb.width);
     assert!(fb.format <= 1 && fb.address != 0 && fb.back_buffer != 0);
     assert!(fb.address % 4 == 0 && fb.back_buffer % 4096 == 0);
@@ -184,12 +191,7 @@ pub fn run(fb: &Framebuffer) -> ! {
         }
         canvas.text(48, 642, "SHARED ASCII GEOMETRY / IRQ TIMER + HLT", 0xe9ca8c);
         canvas.text(48, 666, "SPACE: PAUSE / RESUME ROTATION", 0x77cfc6);
-        canvas.text(
-            48,
-            704,
-            "BOOTSTRAP GRAPHICS - NO PROCESS SCHEDULER YET",
-            0x8b9ca8,
-        );
+        canvas.text(48, 704, memory_label, 0x8b9ca8);
         canvas.text(
             48,
             728,

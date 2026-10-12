@@ -4,6 +4,7 @@ version = "0.0.1"
 edition = "2024"
 
 [dependencies]
+regis-memory = { path = "../regis-memory", optional = true }
 regis-scene = { path = "../regis-scene", optional = true }
 uefi = { version = "=0.40.0", default-features = false }
 
@@ -11,7 +12,10 @@ uefi = { version = "=0.40.0", default-features = false }
 fontdue = "=0.9.3"
 
 [features]
-graphics = ["dep:regis-scene", "interrupts"]
+graphics = ["dep:regis-scene", "memory"]
+memory = ["interrupts", "dep:regis-memory"]
+fault-memory-empty = ["memory"]
+fault-memory-invalid = ["memory"]
 interrupts = []
 fault-timer-masked = ["interrupts"]
 fault-invalid-opcode = ["interrupts"]

@@ -52,8 +52,25 @@ macro_rules! serial { ($($arg:tt)*) => { let _ = writeln!(Serial, $($arg)*); }; 
 mod graphics;
 #[cfg(feature = "interrupts")]
 mod interrupts;
+#[cfg(feature = "memory")]
+mod memory;
 
-/// Internal handoff: v1 prefix, with a v2 framebuffer extension for graphics.
+#[cfg(feature = "memory")]
+/// Framebuffer portion of the internal handoff; v3 allocates its arena after exit.
+#[derive(Clone, Copy, Default)]
+#[repr(C)]
+pub struct Framebuffer {
+    pub address: u64,
+    pub bytes: u64,
+    pub back_buffer: u64,
+    pub back_buffer_bytes: u64,
+    pub width: u32,
+    pub height: u32,
+    pub stride: u32,
+    pub format: u32, // 0: RGB bytes, 1: BGR bytes. Other formats rejected.
+}
+
+/// Internal handoff: v1 serial baseline, v3 memory/framebuffer ownership.
 /// The UEFI entry and kernel share one PE image.
 /// All addresses are identity-mapped; memory remains reserved for this image.
 #[repr(C)]
@@ -65,13 +82,17 @@ struct BootInfo {
     memory_map_bytes: u64,
     descriptor_size: u64,
     descriptor_version: u32,
-    reserved: u32,
-    #[cfg(feature = "graphics")]
-    framebuffer: graphics::Framebuffer,
+    flags: u32,
+    #[cfg(feature = "memory")]
+    framebuffer: Framebuffer,
+    #[cfg(feature = "memory")]
+    image_base: u64,
+    #[cfg(feature = "memory")]
+    image_bytes: u64,
 }
 
 const _: () =
-    assert!(core::mem::size_of::<BootInfo>() == if cfg!(feature = "graphics") { 96 } else { 48 });
+    assert!(core::mem::size_of::<BootInfo>() == if cfg!(feature = "memory") { 112 } else { 48 });
 
 #[entry]
 fn main() -> Status {
@@ -80,6 +101,16 @@ fn main() -> Status {
     boot::set_watchdog_timer(0, 0, None).expect("watchdog disable");
     #[cfg(feature = "graphics")]
     let framebuffer = graphics::prepare();
+    #[cfg(all(feature = "memory", not(feature = "graphics")))]
+    let framebuffer = Framebuffer::default();
+    #[cfg(feature = "memory")]
+    let (image_base, image_bytes) = {
+        let image = boot::open_protocol_exclusive::<uefi::proto::loaded_image::LoadedImage>(
+            boot::image_handle(),
+        )
+        .expect("loaded image");
+        image.info()
+    };
     // No firmware protocol borrows or asynchronous callbacks remain. The
     // returned map owns firmware-allocated LOADER_DATA. It is never dropped.
     let map = unsafe { boot::exit_boot_services(None) };
@@ -87,15 +118,19 @@ fn main() -> Status {
     let meta = map.meta();
     let info = BootInfo {
         magic: *b"EUTHERUS",
-        version: if cfg!(feature = "graphics") { 2 } else { 1 },
+        version: if cfg!(feature = "memory") { 3 } else { 1 },
         size: core::mem::size_of::<BootInfo>() as u32,
         memory_map: map.buffer().as_ptr() as u64,
         memory_map_bytes: map.buffer().len() as u64,
         descriptor_size: meta.desc_size as u64,
         descriptor_version: meta.desc_version,
-        reserved: 0,
-        #[cfg(feature = "graphics")]
+        flags: u32::from(cfg!(feature = "graphics")),
+        #[cfg(feature = "memory")]
         framebuffer,
+        #[cfg(feature = "memory")]
+        image_base: image_base as u64,
+        #[cfg(feature = "memory")]
+        image_bytes,
     };
     core::mem::forget(map);
     #[cfg(feature = "interrupts")]
@@ -110,10 +145,10 @@ fn main() -> Status {
 #[inline(never)]
 extern "C" fn kernel_main(info: &BootInfo) -> ! {
     assert!(
-        info.magic == *b"EUTHERUS"
-            && info.version == if cfg!(feature = "graphics") { 2 } else { 1 }
+        info.magic == *b"EUTHERUS" && info.version == if cfg!(feature = "memory") { 3 } else { 1 }
     );
     assert_eq!(info.size as usize, core::mem::size_of::<BootInfo>());
+    assert_eq!(info.flags, u32::from(cfg!(feature = "graphics")));
     serial!("EutherUS 0.0.1 — System Regis kernel initialized");
     serial!(r#"{{"protocol":"eutherus.boot","version":1,"event":"boot_services_exited"}}"#);
     assert!(info.memory_map_bytes > 0 && info.descriptor_size >= 40);
@@ -127,6 +162,10 @@ extern "C" fn kernel_main(info: &BootInfo) -> ! {
         interrupts::init();
         interrupts::inject_faults();
     }
+    #[cfg(feature = "memory")]
+    let mut frames = memory::initialize(info);
+    #[cfg(feature = "memory")]
+    memory::self_test(&mut frames);
     if cfg!(feature = "fault-panic") {
         panic!("injected panic");
     }
@@ -138,12 +177,18 @@ extern "C" fn kernel_main(info: &BootInfo) -> ! {
         let idtr = [0u8; 10];
         unsafe { asm!("lidt [{}]", "int3", in(reg) idtr.as_ptr(), options(nostack)) };
     }
+    #[cfg(feature = "graphics")]
+    let framebuffer = {
+        let mut fb = info.framebuffer;
+        memory::graphics_buffer(&mut frames, &mut fb);
+        fb
+    };
     serial!(
         r#"{{"protocol":"eutherus.boot","version":1,"event":"boot_success","kernel":"0.0.1","handoff":{}}}"#,
         info.version
     );
     #[cfg(feature = "graphics")]
-    graphics::run(&info.framebuffer);
+    graphics::run(&framebuffer, frames.free_pages());
     #[cfg(all(feature = "interrupts", not(feature = "graphics")))]
     interrupts::idle();
     #[cfg(not(feature = "interrupts"))]
@@ -155,7 +200,9 @@ fn halt() -> ! {
     }
 }
 #[panic_handler]
-fn panic(_info: &PanicInfo) -> ! {
+fn panic(info: &PanicInfo) -> ! {
+    unsafe { asm!("cli", options(nostack)) };
+    serial!("EutherUS panic detail: {}", info);
     serial!(
         r#"{{"protocol":"eutherus.boot","version":1,"event":"panic","reason":"kernel_panic"}}"#
     );
