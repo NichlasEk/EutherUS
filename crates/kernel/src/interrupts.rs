@@ -8,15 +8,40 @@ use core::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
-#[repr(C, align(16))]
-struct Stack([u8; 128 * 1024]);
-static mut STACK: Stack = Stack([0; 128 * 1024]);
-static mut EMERGENCY: Stack = Stack([0; 128 * 1024]);
+pub const STACK_BYTES: u64 = 128 * 1024;
+#[repr(C, align(4096))]
+struct Stack {
+    lower: [u8; 4096],
+    usable: [u8; 128 * 1024],
+    upper: [u8; 4096],
+}
+const EMPTY_STACK: Stack = Stack {
+    lower: [0; 4096],
+    usable: [0; 128 * 1024],
+    upper: [0; 4096],
+};
+static mut STACK: Stack = EMPTY_STACK;
+static mut EMERGENCY: Stack = EMPTY_STACK;
+fn stack_base() -> u64 {
+    unsafe { addr_of!(STACK.usable) as u64 }
+}
+fn emergency_base() -> u64 {
+    unsafe { addr_of!(EMERGENCY.usable) as u64 }
+}
+#[cfg(feature = "paging")]
+pub fn guards() -> [u64; 4] {
+    [
+        stack_base() - 4096,
+        stack_base() + STACK_BYTES,
+        emergency_base() - 4096,
+        emergency_base() + STACK_BYTES,
+    ]
+}
 
 /// Win64 entry: RCX carries BootInfo, 32-byte shadow space and dummy return slot.
 /// BootInfo remains on the retained firmware stack; this function never returns.
 pub unsafe fn enter(info: &BootInfo) -> ! {
-    let top = addr_of_mut!(STACK) as u64 + core::mem::size_of::<Stack>() as u64;
+    let top = stack_base() + STACK_BYTES;
     unsafe {
         asm!("mov rsp, {top}", "sub rsp, 40", "xor rbp, rbp", "jmp {entry}",
         top=in(reg) top, entry=sym crate::kernel_main, in("rcx") info, options(noreturn));
@@ -107,8 +132,8 @@ fn exception(vector: u8, frame: Frame, error: u64) -> ! {
         asm!("mov {}, cr2",out(reg) cr2,options(nomem,nostack));
         asm!("mov {}, rsp",out(reg) rsp,options(nomem,nostack));
     }
-    let base = addr_of!(EMERGENCY) as u64;
-    let emergency = (base..base + core::mem::size_of::<Stack>() as u64).contains(&rsp);
+    let base = emergency_base();
+    let emergency = (base..base + STACK_BYTES).contains(&rsp);
     serial!(
         r#"{{"protocol":"eutherus.cpu","version":1,"event":"exception","vector":{},"error_code":{},"rip":{},"cr2":{},"handler_rsp":{},"emergency_stack":{}}}"#,
         vector,
@@ -206,10 +231,10 @@ pub fn init() {
         // No references to mutable descriptor statics escape initialization.
         addr_of_mut!(TSS.ist)
             .cast::<u64>()
-            .write_unaligned(addr_of!(EMERGENCY) as u64 + core::mem::size_of::<Stack>() as u64);
+            .write_unaligned(emergency_base() + STACK_BYTES);
         addr_of_mut!(TSS.rsp)
             .cast::<u64>()
-            .write_unaligned(addr_of!(STACK) as u64 + core::mem::size_of::<Stack>() as u64);
+            .write_unaligned(stack_base() + STACK_BYTES);
         let base = addr_of!(TSS) as u64;
         let descriptor =
             103u64 | ((base & 0xff_ffff) << 16) | (0x89u64 << 40) | (((base >> 24) & 255) << 56);
@@ -280,15 +305,15 @@ pub fn init() {
         assert_eq!(BREAKPOINTS.load(Ordering::Relaxed), 1);
         let rsp: u64;
         asm!("mov {}, rsp",out(reg) rsp,options(nomem,nostack));
-        let stack_base = addr_of!(STACK) as u64;
-        assert!((stack_base..stack_base + core::mem::size_of::<Stack>() as u64).contains(&rsp));
+        let stack_base = stack_base();
+        assert!((stack_base..stack_base + STACK_BYTES).contains(&rsp));
         serial!(
             r#"{{"protocol":"eutherus.cpu","version":1,"event":"tables_ready","owned_stack":true,"breakpoint_returned":true,"idt":{},"gdt":{},"stack_base":{},"stack_bytes":{},"emergency_base":{}}}"#,
             addr_of!(IDT) as u64,
             addr_of!(GDT) as u64,
             stack_base,
-            core::mem::size_of::<Stack>(),
-            addr_of!(EMERGENCY) as u64
+            STACK_BYTES,
+            emergency_base()
         );
         // Remap the legacy PIC to 32..47 and mask everything except PIT IRQ0.
         io(0x21, 0xff);

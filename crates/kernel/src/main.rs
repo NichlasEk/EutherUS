@@ -54,6 +54,8 @@ mod graphics;
 mod interrupts;
 #[cfg(feature = "memory")]
 mod memory;
+#[cfg(feature = "paging")]
+mod paging;
 
 #[cfg(feature = "memory")]
 /// Framebuffer portion of the internal handoff; v3 allocates its arena after exit.
@@ -166,6 +168,8 @@ extern "C" fn kernel_main(info: &BootInfo) -> ! {
     let mut frames = memory::initialize(info);
     #[cfg(feature = "memory")]
     memory::self_test(&mut frames);
+    #[cfg(feature = "paging")]
+    paging::install(&mut frames);
     if cfg!(feature = "fault-panic") {
         panic!("injected panic");
     }

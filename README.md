@@ -138,3 +138,7 @@ The [physical memory bootstrap](docs/MEMORY-BOOTSTRAP.md) now supplies the
 graphics arena from a tested page allocator. Run
 `python3 scripts/test-memory-qemu.py --build` for RAM patterns, reservations,
 exhaustion, invalid-map/OOM handling, reset and concurrent VM checks.
+
+The graphics kernel now runs with [owned page tables and stack guards](docs/PAGING-BOOTSTRAP.md).
+`python3 scripts/test-paging-qemu.py --build` verifies CR3, boundary faults,
+stack-overflow delivery on the emergency stack, reset and concurrent VMs.

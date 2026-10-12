@@ -48,12 +48,13 @@ and report artifacts; preserve them when moving this lab.
 ## Boundaries
 
 This is the boot-and-observation milestone, not a complete OS. There is no
-scheduler, owned page tables, VirtIO kernel driver
+scheduler, VirtIO kernel driver
 or full kernel GUI yet. The graphics variant has a framebuffer tower and
 bootstrap Space-key pause/resume, with an interrupt-driven PIT timer. The
 `interrupts` and graphics variants have owned stacks, GDT/TSS/IDT and HLT waits;
 the original normal/fault baseline still retains firmware CPU state and halts
-with interrupts disabled. All variants retain firmware page tables. See docs/HANDOFF-V1.md before adding
+with interrupts disabled. The `paging` and graphics variants now activate owned
+page tables and four stack guard pages; other variants retain firmware tables. See docs/HANDOFF-V1.md before adding
 memory reclamation or interrupts. GDB register/memory/disassembly access works;
 relocated Rust source-symbol loading is future work.
 
@@ -87,4 +88,13 @@ arena from the kernel allocator and shows real pool/arena sizes. Run
 `python3 scripts/test-memory-qemu.py --build`; latest report pointer is
 `artifacts/memory-latest.json`. Internal handoff v3 is 112 bytes.
 Only conventional, writable identity-mapped pages below 1 GiB are eligible; no
-firmware pages are reclaimed. Own mappings/guard pages are the next foundation.
+firmware pages are reclaimed. See the owned paging milestone below.
+
+## Owned paging continuation
+
+Read `docs/PAGING-BOOTSTRAP.md`. `python3 scripts/test-paging-qemu.py --build`
+checks a live CR3 switch, all four stack guards, overflow delivery on IST, two
+VMs and warm reset. Latest report: `artifacts/paging-latest.json`. Graphics
+includes paging and accounts for its table frames before allocating the arena.
+Leaf policy is conservatively inherited; old firmware tables remain reserved.
+Next is task contexts/cooperative scheduling, not firmware-memory reclamation.

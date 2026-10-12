@@ -73,5 +73,5 @@ Keyboard handling is deliberately limited to Q35's translated PS/2 Space
 make/break codes, with typematic suppression. There is no general input driver,
 mouse, Unicode text input, power management or physical-hardware acceptance.
 
-Next foundation: owned page tables and guard pages before a
-scheduler and genuine process telemetry feed the tower.
+The graphics variant now includes [owned paging and stack guards](PAGING-BOOTSTRAP.md).
+Next is scheduling and genuine task telemetry for the tower.

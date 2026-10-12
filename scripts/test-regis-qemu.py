@@ -104,7 +104,8 @@ def main():
             passed = next(e for e in memory if e['event'] == 'self_test_pass')
             arena = next(e for e in memory if e['event'] == 'graphics_allocated')
             assert arena['pages'] == 1536 and arena['address'] % 4096 == 0
-            assert arena['free_pages'] + arena['pages'] == ready['free_pages']
+            paging = next(e for e in lab.events(lab.logs(name)['serial'], 'eutherus.paging') if e['event']=='paging_ready')
+            assert arena['free_pages'] + arena['pages'] + paging['table_pages'] == ready['free_pages']
             assert passed['restored_pages'] == ready['free_pages']
             for r in memory:
                 if r['event'] == 'reserved':

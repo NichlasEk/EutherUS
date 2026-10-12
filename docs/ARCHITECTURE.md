@@ -110,3 +110,10 @@ See [CPU bootstrap](CPU-BOOTSTRAP.md); firmware page tables remain retained.
 `memory` adds conventional-frame allocation, explicit reservations and an audit
 of retained mappings. `graphics` consumes a kernel-allocated arena. See
 [memory bootstrap](MEMORY-BOOTSTRAP.md) for v3, bounds and real-QEMU tests.
+
+## Owned paging experiment
+
+`paging` deep-copies the retained hierarchy into kernel-allocated frames and
+activates it with CR3. Graphics includes this layer. Four guard pages protect
+the kernel and emergency stack boundaries; large leaves are split as needed.
+See [paging bootstrap](PAGING-BOOTSTRAP.md) for actual fault tests and limits.

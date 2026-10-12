@@ -31,7 +31,8 @@ adapter owns that responsibility and requires all of the following:
   frames, and reserves them before allocating. It accepts 4 KiB, 2 MiB and 1 GiB
   leaf mappings. Table frames must be in mapped RAM; read-only tables are valid
   because they are only inspected. In the tested OVMF build the tables are
-  read-only. No page-table entry is modified and CR3 is not replaced.
+  read-only. This audit does not modify page-table entries or replace CR3. The optional
+  [paging step](PAGING-BOOTSTRAP.md) subsequently builds and activates an owned copy.
 - Candidate pages must translate to the same physical address and be present and
   writable through every paging level. Others are removed from the pool before
   any returned frame is written. This adapter relies on the existing Q35/OVMF
@@ -99,7 +100,8 @@ warm reset and peer survival are checked. Separate builds exercise an empty pool
 version (rejection and panic before allocator initialization).
 
 Graphics tests additionally require the 1536-page arena to consume exactly that
-many free pages, avoid every explicit reservation, and still pass real pixel
+many free pages after accounting for owned page-table frames, avoid every
+explicit reservation, and still pass real pixel
 rotation, keyboard pause/resume, timer progress and dual-VM input isolation.
 
 `eutherus.memory` version 1 events are `reserved`, `allocator_ready`,
@@ -113,9 +115,9 @@ to by `artifacts/memory-latest.json`. No experimental baseline is auto-promoted.
 ## Remaining work
 
 No firmware memory is reclaimed. ACPI/runtime/boot-service regions remain intact.
-There are no owned page tables, guard pages, per-process address spaces, scheduler
-or userspace isolation. Next is constructing owned mappings and adding guard-page
-fault tests before reclaiming anything or creating real tasks. The host process
+The optional paging layer now provides owned tables and stack guard pages.
+There are still no per-process address spaces, scheduler or userspace isolation.
+See [paging bootstrap](PAGING-BOOTSTRAP.md) before creating real tasks. The host process
 tree remains simulated.
 
 Reference: the pinned uefi-raw 0.16.0 `MemoryDescriptor` layout and

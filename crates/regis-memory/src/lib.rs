@@ -1,5 +1,7 @@
 #![no_std]
+
 //! Bounded physical-frame bookkeeping. No pointers are dereferenced by this crate.
+pub mod paging;
 pub const PAGE: u64 = 4096;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Error {

@@ -89,13 +89,14 @@ This is a single-core Q35/OVMF TCG bootstrap using the legacy PIC routing suppli
 by that platform. APIC/IOAPIC setup, SMP, userspace, scheduling and preemption are
 not implemented. Firmware page tables and all allocations remain retained;
 the optional `memory` feature now provides a conservative conventional-memory
-page allocator. There is still no firmware reclamation or stack guard page. The reserved static
+page allocator. There is still no firmware reclamation. The optional paging feature now
+unmaps dedicated guard pages around both static stacks. The reserved static
 stacks and descriptor tables are part of the kernel image, not free RAM.
 NMI recovery and arbitrary physical platform startup are not acceptance claims.
 
 See [memory bootstrap](MEMORY-BOOTSTRAP.md) for reservations and allocation.
-Next: owned page tables and guard pages before allowing processes or reclaiming
-firmware memory.
+See [paging bootstrap](PAGING-BOOTSTRAP.md) for the subsequent owned CR3 and
+stack-guard milestone. Task scheduling remains future work.
 The System Regis process tree remains simulated in the host preview.
 
 ## Primary references

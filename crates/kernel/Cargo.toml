@@ -12,7 +12,13 @@ uefi = { version = "=0.40.0", default-features = false }
 fontdue = "=0.9.3"
 
 [features]
-graphics = ["dep:regis-scene", "memory"]
+graphics = ["dep:regis-scene", "paging"]
+paging = ["memory"]
+fault-guard-low = ["paging"]
+fault-guard-high = ["paging"]
+fault-emergency-low = ["paging"]
+fault-emergency-high = ["paging"]
+fault-stack-overflow = ["paging"]
 memory = ["interrupts", "dep:regis-memory"]
 fault-memory-empty = ["memory"]
 fault-memory-invalid = ["memory"]
