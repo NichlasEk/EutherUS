@@ -165,6 +165,13 @@ pub fn install(frames: &mut Frames<'_>) {
     assert_ne!(root, old);
 
     let guards = interrupts::guards();
+    #[cfg(feature = "tasks")]
+    let guards = {
+        let task = crate::tasks::guards();
+        [
+            guards[0], guards[1], guards[2], guards[3], task[0], task[1], task[2], task[3],
+        ]
+    };
     for guard in guards {
         assert_eq!(guard % PAGE, 0);
         copy.remove_guard(root, guard, frames);

@@ -15,11 +15,11 @@ EutherLab → QEMU / OVMF → existing EutherBoot → EutherUS UEFI entry
                                              test report + cleanup
 ```
 
-The kernel initializes COM1, retains the final UEFI memory map, reports success
-**after exiting boot services**, and halts with interrupts disabled. Memory
-allocation, interrupt handling, scheduling and a graphical desktop are future
-milestones. The firmware screen remains visible; screenshot support does not
-imply a kernel graphics driver.
+The normal baseline initializes COM1, retains the final UEFI memory map, reports
+success **after exiting boot services**, and halts with interrupts disabled.
+Optional experimental variants add interrupts, physical memory allocation,
+owned paging, framebuffer graphics and cooperative tasks. The default baseline
+retains the firmware screen; the graphics variant renders the real kernel tower.
 
 ## System Regis graphical form study
 
@@ -142,3 +142,27 @@ exhaustion, invalid-map/OOM handling, reset and concurrent VM checks.
 The graphics kernel now runs with [owned page tables and stack guards](docs/PAGING-BOOTSTRAP.md).
 `python3 scripts/test-paging-qemu.py --build` verifies CR3, boundary faults,
 stack-overflow delivery on the emergency stack, reset and concurrent VMs.
+
+## Cooperative task experiment
+
+The separate `tasks` variant runs two kernel tasks on individually guarded
+stacks. It checks register/stack preservation across cooperative yields and
+returns to kernel idle when both finish. Run
+`python3 scripts/test-tasks-qemu.py --build` for progress, lifecycle, reset,
+isolation and real task-stack fault acceptance. See
+[task bootstrap](docs/TASKS-BOOTSTRAP.md) for its limits and ABI contract.
+
+The `graphics` variant now runs renderer and input as long-lived cooperative
+tasks. Tower branches show real dispatch, frame/poll and yield counts. Space
+pauses rotation while task activity continues. The scheduler sleeps with HLT
+when neither task is ready. `python3 scripts/test-graphics-faults-qemu.py --build`
+proves unexpected input-task exit and a real active input-stack guard fault.
+
+The graphics kernel also has a [live task inspector](docs/INSPECTOR.md). Use Tab
+or left/right to select a branch, F2 to show/hide details, Esc to close, and
+Space to pause rotation. It displays real state, timer wait, stack bounds and
+counters without controlling task execution. Run
+`python3 scripts/test-inspector-qemu.py` after building `graphics` for the real
+QEMU keyboard, pixel, data-consistency and isolation tests.
+
+The kernel now has a bounded read-only [console](docs/PROMPT.md), opened with F1. While it has focus, Esc closes it, Space types a space, and inspector selection keys are suspended.

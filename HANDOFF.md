@@ -1,175 +1,205 @@
-# EutherUS / System Regis — handoff 2026-10-12
+# EutherUS / System Regis — handoff 2026-10-15
 
 ## Börja här
 
 Projektet finns i `/run/media/nichlas/Kingston1TB/EutherUS`, på grenen `main`.
-Det är ett eget Git-repo med remote https://github.com/NichlasEk/EutherUS.git.
-Läs `AGENTS.md` och denna fil innan nästa ändring. Kontrollera sedan
-`git status --short --branch` och aktuella rapporter; bygg inte om av gammal vana.
+Remote är `https://github.com/NichlasEk/EutherUS.git`.
+Läs `AGENTS.md`, denna fil och `docs/ARCHITECTURE.md` före nästa ändring.
+Kontrollera aktuell arbetskopia och rapporter; bygg inte om av gammal vana.
 
-Senast fullständigt verifierade kodcommit är
-`f36e337da4ff92514ff2ecc044764277e210af33`. Denna handoff är en efterföljande
-ändring av dokumentationen. Testresultaten nedan gäller kodcommitten, inte en
-ny körning efter dokumentationsändringen.
-
-Nästa föreslagna milstolpe är **task-kontexter och en liten kooperativ
-schemaläggare med skyddade stackar**. Grafik, input och en testuppgift kan då
-bli verkliga kernel-uppgifter och senare ge tornet verklig aktivitet att visa.
-Processmodell, programmodell och säkerhetsarkitektur behöver fortfarande
-förankras i projektets premisser.
+**Ny milstolpe: en läsbar kontextuell kernelprompt med help, tasks, memory och inspect.**
+Implementation, tester och dokumentation versionshanteras tillsammans i
+milstolpecommitten efter `62912e9`. Genererade byggbilder och rapporter är lokala.
+Senaste tidigare verifierade kodcommit är `f36e337`.
+Full regression för den nya arbetskopian finns i `artifacts/prompt-milestone.json`.
+Byggmanifesten anger dirty-status och exakt innehållshash; hänvisa inte till
+`62912e9` som om den committen innehöll task-implementationen.
+Denna handoff uppdaterades efter regressionen; ingen körbar kod ändrades då.
 
 ## Vision och vad som faktiskt kör
 
-EutherUS är ett nytt Rust-operativsystem. Befintliga EutherBoot är dess
-Rust-baserade UEFI-startpunkt; vi bygger inte en ny GRUB-ersättare här.
+EutherUS är ett Rust-operativsystem med befintliga EutherBoot som UEFI-startpunkt.
 System Regis ska bli ett levande process- och resursträd kring ett roterande
-ASCII-torn, med en kontextuell prompt och tydligt ägarskap över maskinen.
-
-Det finns två separata körbara implementationer:
+ASCII-torn, med kontextuell prompt och tydligt ägarskap över maskinen.
 
 - **Native Linux-preview:** interaktivt torn, processgrenar, prompt, inspektör
-  och kamera. Processer och minnesdata är uttryckligen simulerade.
-- **Riktig QEMU-kernel:** samma delade torngeometri renderas till framebuffer
-  efter ExitBootServices. Space pausar/återupptar animationen. Visade
-  pool-/arenastorlekar kommer från kernelns allocator. Processgrenar, prompt,
-  schemaläggare och userspace finns ännu inte i gästen.
+  och kamera. Processer och minnesdata är fortfarande simulerade.
+- **QEMU graphics:** renderer och PS/2-input kör som två långlivade tasks på
+  egna skyddade stackar. Tornets grenar visar verkliga dispatches, bildrutor,
+  inputpollningar och yields. Space pausar rotationen medan tasks/räknare
+  fortsätter. Framebufferarenan kommer från kernelns allocator. En läsande
+  inspektör visar den valda uppgiftens tillstånd, väntan, stackgränser och räknare.
+  Tab/pilar väljer gren, F2 visar/döljer panelen och Esc stänger den.
+- **QEMU tasks:** separat seriell variant med två verkliga kerneluppgifter.
+  De kör kooperativt på varsin skyddad stack, yieldar åtta respektive fem gånger,
+  avslutas och lämnar tillbaka kontrollen till kernelns interruptdrivna idle.
 
-QEMU-bilden är alltså verklig kernelgrafik, inte en GIF. Alla accepterade
-kerneltester är körda i TCG; fysisk hårdvara och KVM är separata, overifierade steg.
+TCG är acceptansbaslinjen. KVM och fysisk hårdvara är inte verifierade.
+Processmodell, programmodell och övergripande säkerhetsarkitektur är fortfarande
+öppna; två kerneluppgifter innebär inte userspace eller processisolering.
 
 ## Implementerat
 
-| Del | Nuvarande beteende |
+| Del | Beteende |
 | --- | --- |
-| EutherLab | Python-standardbibliotek, CLI och versionerat JSON-lines-API; ingen LLM behövs för testorkestrering. |
-| VM-isolering | Egen qcow2-overlay, OVMF-vars, loggar, QMP/GDB Unix-sockets och verifierad PID-identitet per instans. Nätverk avstängt. |
-| Bygge | Snapshot av befintliga EutherBoot, låsta Rust-beroenden och manifest med commits, dirty-status, innehållshashar, toolchain och firmware-identitet. |
-| Boot | OVMF → EutherBoot → UEFI Rust-entry → ExitBootServices → no_std-kernel → strukturerade COM1-händelser. |
-| CPU | Egen GDT/TSS/IDT, kernelstack och emergency-stack, dubbel-fel via IST, PIT/PIC-timer och HLT-väntan. |
-| Fysiskt minne | Testad 4 KiB-frameallocator, explicita reservationer och konservativ pool av konventionellt minne under 1 GiB. |
-| Paging | Egen kopia av sidtabellshierarkin, verifierat CR3-byte, fyra omappade stackguards och uppdelning av stora pages där det behövs. |
-| Grafik | Delad no_std-geometri, RGB-framebuffer, Space-input och 6 MiB arena från kernelns allocator. |
+| EutherLab | Python-standardbibliotek, CLI/JSON-lines-API, isolerade overlays, OVMF-vars, QMP/GDB och verifierad PID-identitet. |
+| Boot | OVMF → snapshot av EutherBoot → UEFI Rust-entry → ExitBootServices → no_std-kernel → strukturerade COM1-händelser. |
+| CPU | Egen GDT/TSS/IDT, kernelstack, double-fault IST-stack, PIT/PIC och HLT. |
+| Minne | Testad 4 KiB-frameallocator med explicita reservationer och konservativ pool under 1 GiB. |
+| Paging | Egna kopierade sidtabeller, CR3-byte, guards och splitting av stora pages. |
+| Grafik/input | Två separata tasks; delad torngeometri, framebuffer, Space-input och 6 MiB allocatorarena. |
+| Tasks | Två statiska 128 KiB-stackar, fyra ytterligare guards, Ready/Running/Sleeping/Finished och kooperativ round-robin. |
+| Inspektör | Kopierade, läsande scheduler-snapshots; markerad gren, tangentbordsval och live-panel. |
 
-`graphics` inkluderar paging, memory och interrupts. `paging` inkluderar memory.
-Normalvarianten är fortfarande den lilla seriella boot-baselinen; den har inte
-alla dessa experimentella lager. Intern BootInfo är v3, 112 byte, för
-memory/paging/graphics; normal/CPU-varianter använder v1. Se respektive dokument
-för kontrakt och feature-gränser.
+Normalvarianten är fortfarande den lilla seriella baslinjen. `graphics` och
+`tasks` använder samma scheduler och inkluderar paging → memory → interrupts.
+Den seriella `tasks`-varianten behåller sina två ändliga testuppgifter.
+BootInfo är v3 (112 byte) för memory/paging/graphics/tasks, v1 för normal/CPU.
 
-Kernelns och emergency-stackens användbara storlek är vardera 128 KiB, med
-4 KiB guards på båda sidor när paging är aktivt. Sidtabellerna bevarar i övrigt
-firmwarets leaf-mappningar och rättigheter. Gamla firmwaretabeller och
-icke-konventionellt minne förblir reserverade. Ingen firmware-reclamation,
-global heap, SMP, userspace eller generell dynamisk mapping-API finns ännu.
+Task-byte använder en explicit SysV64-anropsgräns inne i Win64/UEFI-kerneln.
+RSP/returadress, callee-saved GPR, RFLAGS, MXCSR och x87-kontrollord bevaras.
+Det är en pausad funktionskontext, inte en full interrupt-/preemptionskontext.
+IRQ-handlern schemalägger aldrig. Statisk stacklagring ligger reserverad i
+kernelbilden; den allokeras/frigörs inte dynamiskt.
+Grafik sover fem tick efter varje bild, input ett tick efter högst 32 lästa bytes.
+Sleep yieldar till schedulern; när båda sover väntar schedulern med HLT på sin
+stack. Timern väcker genom att räkna tick men gör aldrig ett task-byte.
+
+En oväntad retur från grafik/input är fatal (task_finished följt av panic).
+Input-guard-fel ger #PF på dess egen stack. Ingen task-restart/felåterhämtning
+finns. Grafiken läser kopior av räknarna och inputstatus; input rör inte arenan.
+Inspektören förändrar inte task-tillstånd. Den visar grafiken som running när
+grafiken ritar, och input normalt som sleeping med timerdeadline. En förfallen
+deadline betyder inte ready förrän schedulern gör övergången. Stackstorleken är
+reserverad kapacitet, inte uppmätt stackförbrukning. F1 öppnar den läsande
+prompten; Esc/F1 stänger med bevarat utkast. Med fokus skriver Space mellanslag,
+och Tab/pilar/F2 ändrar inte gren. Help, tasks, memory och inspect läser data;
+inspect utan argument använder vald gren. Input ser sig själv running när
+kommandot körs. Minnesvärdena fångas efter arenans allokering; inga senare
+allokeringar sker. Se `docs/PROMPT.md`, `docs/INSPECTOR.md`, `docs/TASKS-BOOTSTRAP.md` och
+`docs/GRAPHICS-BOOTSTRAP.md` före utökning.
+
+Firmwaretabeller och icke-konventionellt minne är fortfarande reserverade.
+Ingen firmware-reclamation, global heap, SMP, userspace eller generell dynamisk
+mapping-/task-spawn-API finns. En task som inte yieldar kan svälta den andra.
 
 ## Verifierad evidens
 
-Sammanställning: `artifacts/paging-milestone.json`, från ren kodcommit
-`f36e337da4ff92514ff2ecc044764277e210af33`.
+Sammanställning: `artifacts/prompt-milestone.json`.
+Körloggar och testad källidentitet: `artifacts/prompt-regression/summary.json`.
 
 | Svit | Resultat | Lokal rapport |
 | --- | --- | --- |
-| Paging | PASS: CR3, fyra direkta guard-fel, stackoverflow via emergency IST, parallella VM och reset | `artifacts/reports/paging-20261012-090955-495e71.json` |
-| Grafik | PASS: riktig rendering/input i QEMU och isolerade instanser | `artifacts/regis/qemu/20261012-090957-1b6b0e/report.json` |
-| Minne | PASS: reservationer, RAM-mönster, exhaustion, invalid-map/OOM och livscykel | `artifacts/reports/memory-20261012-091034-749eef.json` |
-| CPU | PASS: timer, register, reset och riktiga UD/GP/PF/DF-fel samt maskerad timer | `artifacts/reports/interrupts-20261012-091114-16e8fd.json` |
-| Ursprungligt labb | PASS: normal boot, JSON API, parallell isolering, panic, timeout och crash | `artifacts/reports/20261012-091217-c421b9.json` |
+| tasks | PASS | `artifacts/reports/tasks-20261015-183048-8cac29.json` |
+| paging | PASS | `artifacts/reports/paging-20261015-183127-7bf481.json` |
+| graphics | PASS | `artifacts/regis/qemu/20261015-183128-44db73/report.json` |
+| inspector | PASS | `artifacts/regis/inspector/20261015-183200-ff2c95/report.json` |
+| prompt | PASS | `artifacts/regis/prompt/46030bff8506/report.json` |
+| graphics-faults | PASS | `artifacts/reports/graphics-faults-20261015-183349-30d7ac.json` |
+| memory | PASS | `artifacts/reports/memory-20261015-183410-abc9ab.json` |
+| cpu | PASS | `artifacts/reports/interrupts-20261015-183449-af91fe.json` |
+| baseline | PASS | `artifacts/reports/20261015-183551-f37a73.json` |
 
-Dessutom passerade 7 `regis-memory`-tester och 9 Python-controller-tester.
-Vid slutkontrollen fanns inga aktiva controllerägda VM-instansprocesser.
-Det säger inget om huruvida en separat native-preview fortfarande är öppen.
+Task-sviten bevisar exakt progressordning, registersentineler i assembly,
+volatile stackmönster, separata FP-kontrollvärden och bevarad interruptflagga.
+Båda uppgifterna gör framsteg före injicerade fel. Fyra direkta guardskrivningar
+ger #PF med exakt CR2/error code; ett framtvingat task-stacköverflöde ger #DF
+på emergency IST. Tester inkluderar två VM, varm/full reset och isolerat stopp.
+Grafiksviten bevisar riktiga task-stackar, sleep/wakeup, scheduler-HLT, live
+räknare även under paus, inputisolering och varm/full reset. Två extra
+QEMU-felvarianter provar oväntad input-retur och ett faktiskt input-guard-fel
+**efter boot_success och verklig aktivitet**, följt av halt och korrekt fatal
+status från controllern. Inspektörsviten provar verklig QMP-tangentbordsinput,
+Tab/pilar, F2/Esc, hållna/upprepade tangenter, ignorerade tangenter, pixeländringar,
+data mot task-/frame-händelser, uppdatering under rotationspaus, två-VM-isolering
+och varm/full reset av val/panel. Promptsviten provar fokus och bevarat utkast,
+redigering, Shift, verkliga task-/minnesdata, felaktiga argument, radgräns,
+upprepade tangenter, kommandots eventordning, panelpixlar, VM-isolering och reset.
+Dessutom passerade 15 Rust-tester och 9 Python-tester.
 
-Senaste riktiga QEMU-bild: `artifacts/regis/qemu-tower.png`.
-Rapportpekare finns också i `artifacts/paging-latest.json`,
-`artifacts/memory-latest.json`, `artifacts/interrupts-latest.json` och
-`artifacts/regis/qemu-latest.json`.
+Senaste granskade riktiga QEMU-bild: `artifacts/regis/qemu-prompt.png`.
+Tidigare rapporter finns kvar via `artifacts/graphics-tasks-milestone.json`
+och `artifacts/tasks-milestone.json`.
 
 Known-good är fortfarande den ursprungliga seriella labbversionen
 `38e3cbed592c90fc432d9b2a7b0b7f986a7efa63`, via `.lab/known-good.json`.
-Grafik/paging-experimenten har inte promoverats. Behåll dess refererade
-byggartefakter och rapport om labbet flyttas.
+Ingen experimentvariant har promoverats. Bevara dess refererade artefakter.
+Vid slutkontrollen fanns inga aktiva controllerägda VM-processer.
 
 ## Återuppta och reproducera
 
-Värdberoenden: Python 3.11+, Git, QEMU system x86 och qemu-img, OVMF,
-dosfstools, mtools, GDB och curl. Native-preview använder X11; dess automatiska
-UI-tester körs separat i Xvfb. Se [README](README.md) för paket och firmwarevägar.
-
-EutherBoot-källan förväntas i `../EutherBoot`; sätt `EUTHERBOOT_SOURCE` för annan
-plats. Bygget kopierar källan och ändrar inte sibling-checkouten. Dess eventuella
-lokala ändringar registreras i manifestet och arkiveras med byggartefakten.
+Toolchain: projektlokal `nightly-2026-10-01`, target `x86_64-unknown-uefi`.
+Värdberoenden och setup beskrivs i README. EutherBoot förväntas i `../EutherBoot`
+eller via `EUTHERBOOT_SOURCE`; bygget ändrar inte sibling-checkouten.
+Normala VM: Q35, TCG, 256 MiB RAM, en CPU, inget nätverk.
 
 ```sh
-./scripts/setup.sh
 export CARGO_HOME="$PWD/.tools/cargo"
 export RUSTUP_HOME="$PWD/.tools/rustup"
 export PATH="$CARGO_HOME/bin:$PATH"
-
 cargo test --locked -p regis-memory -p regis-model -p regis-preview -p regis-scene
-python3 -m unittest discover -s tests -v
+python3 scripts/test-tasks-qemu.py --build
 python3 scripts/test-paging-qemu.py --build
 ./eutherlab build --variant graphics
 python3 scripts/test-regis-qemu.py
+python3 scripts/test-inspector-qemu.py
+python3 scripts/test-prompt-qemu.py
+python3 scripts/test-graphics-faults-qemu.py --build
 python3 scripts/test-memory-qemu.py --build
 python3 scripts/test-interrupts-qemu.py --build
 python3 scripts/validate.py
 ```
 
-Toolchain är projektlokal `nightly-2026-10-01`, target
-`x86_64-unknown-uefi`. Setup ändrar inte shellprofilen. Normala VM-inställningar
-är Q35, TCG, 256 MiB RAM, en CPU och inget nätverk.
-
-För en enskild grafikinstans efter bygge:
+En enskild task-instans, med redan byggd variant:
 
 ```sh
-./eutherlab boot --vm regis --variant graphics
-./eutherlab status --vm regis
-./eutherlab logs --vm regis
-./eutherlab screenshot --vm regis
-./eutherlab debug --vm regis --registers
-./eutherlab stop --vm regis
-./eutherlab clean --vm regis
+./eutherlab boot --vm tasks-demo --variant tasks
+./eutherlab status --vm tasks-demo
+./eutherlab logs --vm tasks-demo
+./eutherlab stop --vm tasks-demo
+./eutherlab clean --vm tasks-demo
 ```
 
-QEMU kör headless; screenshot hämtar den verkliga skärmen via QMP. Boot-kommandot
-väntar på QMP, inte på kernelns boot-success: kontrollera status/loggar eller
-använd testsuiten. Stop bevarar loggar; clean vägrar ta bort en levande VM.
-`reset` är varm reset; `reset --fresh` återställer disk och firmware-vars från
-samma immutabla bygge. Använd aldrig breda processdödningar.
+`boot` väntar på QMP, inte boot-success. `status.task_events` visar task-händelser.
+QEMU är headless. För tornet: använd `--variant graphics` och `screenshot`.
+Stop bevarar loggar; clean vägrar levande VM. `reset` är varm reset;
+`reset --fresh` återställer disk/firmware-vars från samma immutabla bygge.
+Döda aldrig QEMU-processer via breda processmatchningar.
 
-För den interaktiva Linux-formstudien: `./scripts/regis-preview.sh`.
-F3 växlar rörelse, F4 släpper kameralås, F2 visar inspektör, F10 sparar bild,
-Ctrl+Q avslutar. Kör inte automatiska UI-tester mot användarens öppna fönster.
+Native-formstudie: `./scripts/regis-preview.sh`. F3 rörelse, F4 kameralås,
+F2 inspektör, F10 bild, Ctrl+Q avslut. Automatiska UI-tester körs separat i Xvfb.
 
-## Kodkarta och nästa arbetssteg
+## Nästa arbetssteg och kodkarta
 
-| Fil/dokument | Ansvar |
+Prompten och inspektören är implementerade. Prompten har 64 teckens rad,
+åtta utdatarader, US ASCII-inmatning och Backspace i slutet. Ingen historik-
+navigering, Unicode eller programstart finns. Nästa större steg är ännu inte
+beslutat. Grafiken har två fasta task-grenar; den generella
+processmodellen från native-previewen har inte flyttats in. Diskutera större
+program-/resursbeslut med användaren när de blir aktuella.
+Behåll timer/undantag separata från task-byte. Dynamisk task-livscykel,
+processisolering och firmware-reclamation är senare arkitekturbeslut.
+
+| Fil | Ansvar |
 | --- | --- |
-| `lab/controller.py`, `lab/validation.py` | VM-livscykel, API, byggmanifest och basacceptans |
-| `crates/kernel/src/interrupts.rs` | CPU-tabeller, stackar, undantag och timer |
-| `crates/kernel/src/memory.rs`, `crates/regis-memory/` | Minnessäkerhetskontroller, frames och rena allocator/split-tester |
-| `crates/kernel/src/paging.rs` | Bygga/auditera egna tabeller, guards och CR3-byte |
-| `crates/kernel/src/graphics.rs`, `crates/regis-scene/` | Framebufferrendering och delad torngeometri |
-| `crates/regis-model/`, `crates/regis-preview/` | Simulerad processmodell och native-formstudie |
-| [Arkitektur](docs/ARCHITECTURE.md), [API](docs/API.md) | Labbkontrakt och maskinläsbart gränssnitt |
-| [CPU](docs/CPU-BOOTSTRAP.md), [Minne](docs/MEMORY-BOOTSTRAP.md), [Paging](docs/PAGING-BOOTSTRAP.md) | Nuvarande kernelmekanismer och begränsningar |
-| [Grafik](docs/GRAPHICS-BOOTSTRAP.md), [System Regis](docs/SYSTEM-REGIS.md) | Gästgrafik respektive native-interaktion |
-
-Nästa implementation bör börja med en liten dokumenterad task-context och
-kooperativ yield, egna skyddade task-stackar samt deterministiska serialtester
-som bevisar att två uppgifter gör framsteg och behåller register/stackdata.
-Behåll timer/undantagsvägarna separata från task-byte tills det är verifierat.
-Koppla sedan riktig task-telemetri till tornet. Full processisolering och
-firmware-reclamation är senare arkitekturbeslut.
+| `crates/kernel/src/prompt.rs`, `scripts/test-prompt-qemu.py`, `docs/PROMPT.md` | Läsande konsol, fokus, begränsningar och faktisk QEMU-acceptans. |
+| `crates/kernel/src/tasks.rs` | Kontextbyte, stackar, scheduler och task-prober. |
+| `scripts/test-tasks-qemu.py` | QEMU-acceptans för task-progress, fel och livscykel. |
+| `scripts/test-regis-qemu.py`, `scripts/test-graphics-faults-qemu.py` | Live grafik/input, telemetri, pixlar, reset och fatala task-fel. |
+| `scripts/test-inspector-qemu.py`, `docs/INSPECTOR.md` | Tangentbordsval, läsande task-data, pixeltest, isolering och kontroller. |
+| `crates/kernel/src/interrupts.rs` | CPU-tabeller, kernel/emergency-stackar, timer/undantag. |
+| `crates/kernel/src/paging.rs` | Sidtabeller, CR3 och samtliga guards. |
+| `crates/kernel/src/memory.rs`, `crates/regis-memory/` | Frames, reservationer och allocator/split-tester. |
+| `crates/kernel/src/graphics.rs`, `crates/kernel/src/input.rs`, `crates/regis-scene/` | Grafik/input-tasks, framebuffer, telemetri och delad geometri. |
+| `crates/regis-model/`, `crates/regis-preview/` | Simulerad modell och native-formstudie. |
+| `lab/controller.py`, `lab/validation.py` | VM-livscykel, byggmanifest, API och basacceptans. |
 
 ## Git, artefakter och säkerhetsgräns
 
-Push omfattar källkod, tester och dokumentation. `.tools/`, `.lab/`, `target/`,
-`artifacts/` och `worktrees/` är ignorerade och följer inte med Git. En ny clone
-måste installera toolchain, ha EutherBoot-källan tillgänglig och generera egna
-byggbilder/rapporter; den får inte den lokala known-good-pekaren automatiskt.
+`.tools/`, `.lab/`, `target/`, `artifacts/` och `worktrees/` är ignorerade.
+Källkod/tester/dokumentation får versionshanteras; genererade firmwarebilder,
+diskar och loggar ska inte checkas in. En ny clone måste generera egna artefakter.
 
 Ändra inte värdens bootposter, installerade EutherBoot, fysiska diskar eller
-firmwareinställningar. Fysisk hårdvara kräver separat uttrycklig instruktion.
-Labbet använder disponibla virtuella resurser. VM-isoleringen är inte en
-säkerhetssandbox för en kodagent med obegränsad shellåtkomst.
+firmwareinställningar. Fysiska tester kräver separat uttrycklig instruktion.
+Labbet äger endast sina disponibla virtuella resurser.

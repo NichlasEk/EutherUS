@@ -50,12 +50,18 @@ macro_rules! serial { ($($arg:tt)*) => { let _ = writeln!(Serial, $($arg)*); }; 
 
 #[cfg(feature = "graphics")]
 mod graphics;
+#[cfg(feature = "graphics")]
+mod input;
 #[cfg(feature = "interrupts")]
 mod interrupts;
 #[cfg(feature = "memory")]
 mod memory;
 #[cfg(feature = "paging")]
 mod paging;
+#[cfg(feature = "graphics")]
+mod prompt;
+#[cfg(feature = "tasks")]
+mod tasks;
 
 #[cfg(feature = "memory")]
 /// Framebuffer portion of the internal handoff; v3 allocates its arena after exit.
@@ -170,6 +176,8 @@ extern "C" fn kernel_main(info: &BootInfo) -> ! {
     memory::self_test(&mut frames);
     #[cfg(feature = "paging")]
     paging::install(&mut frames);
+    #[cfg(all(feature = "tasks", not(feature = "graphics")))]
+    tasks::run();
     if cfg!(feature = "fault-panic") {
         panic!("injected panic");
     }

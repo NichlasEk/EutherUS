@@ -63,3 +63,20 @@ The API provides no arbitrary command, QMP passthrough, physical-disk path,
 network forwarding or host firmware operation. It is a trusted local control
 interface, not an access-control boundary against other processes of the same
 user. Do not expose stdin/stdout over a network without a separate security design.
+
+The experimental `tasks` variant and `task0-low`, `task0-high`, `task1-low`,
+`task1-high`, `task-overflow` fault variants are also accepted by build/boot.
+`status` includes `task_events` parsed from `eutherus.tasks` version 1. See
+[task bootstrap](TASKS-BOOTSTRAP.md) for event ordering and acceptance.
+
+`graphics` now runs renderer/input tasks and reports real activity counters.
+`graphics-input-exit` and `graphics-input-guard` inject fatal failures after both
+tasks have made progress. A prior `boot_success` does not override a later
+panic or CPU exception in `observe`/test results. See
+[graphics bootstrap](GRAPHICS-BOOTSTRAP.md) for the telemetry fields.
+
+Inspector diagnostics are carried in the `eutherus.graphics` serial stream:
+`inspector_changed` records input selection/visibility, and `inspector_presented`
+records the copied task snapshot actually rendered. `frame_presented` adds
+`selected_task`, `inspector_visible` and `selection_revision`. The complete
+field/observation contract is in [inspector](INSPECTOR.md).

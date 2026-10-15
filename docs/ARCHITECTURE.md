@@ -117,3 +117,23 @@ of retained mappings. `graphics` consumes a kernel-allocated arena. See
 activates it with CR3. Graphics includes this layer. Four guard pages protect
 the kernel and emergency stack boundaries; large leaves are split as needed.
 See [paging bootstrap](PAGING-BOOTSTRAP.md) for actual fault tests and limits.
+
+## Cooperative task experiment
+
+The separate `tasks` variant adds two cooperative kernel tasks with individual
+guarded stacks after owned paging. It preserves suspended call contexts and
+returns to boot when both finite tasks finish. The `graphics` variant uses the
+same scheduler for long-lived renderer and input tasks, with timed sleeps and
+real activity snapshots on the tower branches. The scheduler uses HLT when both
+sleep; IRQ handlers never schedule. Unexpected essential-task exit is fatal.
+See [task bootstrap](TASKS-BOOTSTRAP.md) for the ABI/lifetime contract and
+[graphics bootstrap](GRAPHICS-BOOTSTRAP.md) for telemetry and live fault tests.
+
+## Read-only task inspector
+
+The graphics task reads copied scheduler snapshots for a keyboard-selected task.
+Its sidebar shows actual state/wait, stack bounds and activity. Input owns a
+packed selection/visibility/revision value; navigation cannot alter task state.
+See [inspector](INSPECTOR.md) for controls, observation semantics and TCG evidence.
+
+The kernel now has a bounded read-only [console](PROMPT.md), opened with F1. While it has focus, Esc closes it, Space types a space, and inspector selection keys are suspended.

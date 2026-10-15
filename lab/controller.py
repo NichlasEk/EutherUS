@@ -25,7 +25,7 @@ STATE = ROOT / '.lab'
 ARTIFACTS = ROOT / 'artifacts'
 TARGET = 'x86_64-unknown-uefi'
 BASE_VARIANTS = ('normal', 'panic', 'timeout', 'crash')
-VARIANTS = BASE_VARIANTS + ('graphics', 'interrupts', 'invalid-opcode', 'page-fault', 'general-protection', 'double-fault', 'timer-masked', 'memory', 'memory-empty', 'memory-invalid', 'paging', 'guard-low', 'guard-high', 'emergency-low', 'emergency-high', 'stack-overflow')
+VARIANTS = BASE_VARIANTS + ('graphics', 'interrupts', 'invalid-opcode', 'page-fault', 'general-protection', 'double-fault', 'timer-masked', 'memory', 'memory-empty', 'memory-invalid', 'paging', 'guard-low', 'guard-high', 'emergency-low', 'emergency-high', 'stack-overflow', 'tasks', 'task0-low', 'task0-high', 'task1-low', 'task1-high', 'task-overflow', 'graphics-input-exit', 'graphics-input-guard')
 EVENTS = ['uefi_entry', 'boot_services_exited', 'memory_map', 'boot_success']
 LOCKS = threading.local()
 
@@ -117,7 +117,7 @@ def build(eutherboot=None, variant='normal', **_):
         boot_source = identity(repo)
         args = ['cargo', 'build', '--locked', '--release', '--target', TARGET, '-p', 'eutherus-kernel']
         if variant != 'normal':
-            args += ['--features', variant if variant in ('graphics', 'interrupts', 'memory', 'paging') else 'fault-' + variant]
+            args += ['--features', variant if variant in ('graphics', 'interrupts', 'memory', 'paging', 'tasks') else 'fault-' + variant]
         run(args, env=env)
         build_id = uuid.uuid4().hex[:16]
         dest = ARTIFACTS / 'builds' / build_id
@@ -399,6 +399,7 @@ def status(vm='kernel-test', **_):
         result['cpu_events'] = events(serial, 'eutherus.cpu')
         result['memory_events'] = events(serial, 'eutherus.memory')
         result['paging_events'] = events(serial, 'eutherus.paging')
+        result['task_events'] = events(serial, 'eutherus.tasks')
         return result
 
 

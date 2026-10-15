@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Real TCG graphics/keyboard/isolation acceptance; no mocked guest results."""
+"""Real TCG graphics/input tasks, live telemetry, pixels and lifecycle acceptance."""
 import hashlib
 import json
 from pathlib import Path
@@ -45,7 +45,8 @@ def space(vm):
 
 def capture(vm, dest):
     # Screenshots may be between presents, so rotation tests compare a large
-    # tower region rather than exact expected pixels. Paused pixels must match.
+    # tower region rather than exact expected pixels. Paused tower pixels match;
+    # live telemetry must keep changing.
     source = Path(lab.screenshot(vm)['path'])
     shutil.copy2(source, dest)
     data = dest.read_bytes()
@@ -53,11 +54,60 @@ def capture(vm, dest):
     assert header.split() == [b'P6', b'1024', b'768']
     assert len(pixels) == 1024*768*3
     tower = b''.join(pixels[(y*1024+380)*3:(y*1024+660)*3] for y in range(188,610))
+    branches = b''.join(pixels[(y*1024+x)*3:(y*1024+x+232)*3] for x, start in ((64, 276), (704, 408)) for y in range(start, start+96))
     background = bytes.fromhex('08141d')
     lit = sum(tower[i:i+3] != background for i in range(0,len(tower),3))
     assert lit > 2000, 'missing tower pixels'
     return {'path': str(dest), 'sha256': hashlib.sha256(data).hexdigest(),
-            'tower_sha256': hashlib.sha256(tower).hexdigest(), 'tower_lit_pixels': lit}
+            'tower_sha256': hashlib.sha256(tower).hexdigest(), 'tower_lit_pixels': lit,
+            'branches_sha256': hashlib.sha256(branches).hexdigest(),
+            'branches_lit_pixels': sum(branches[i:i+3] != background for i in range(0, len(branches), 3))}
+
+
+def task_evidence(vm):
+    status = lab.status(vm)
+    task = status['task_events']
+    ready = [e for e in task if e['event'] == 'task_ready']
+    assert [(e['id'], e['name']) for e in ready] == [(0, 'graphics'), (1, 'input')]
+    assert ready[0]['guard_high'] + 4096 <= ready[1]['guard_low']
+    for owner in ready:
+        assert owner['stack_bytes'] == 128 * 1024
+        assert owner['stack_base'] == owner['guard_low'] + 4096
+        assert owner['guard_high'] == owner['stack_base'] + owner['stack_bytes']
+    ordered = []
+    for line in lab.logs(vm)['serial'].splitlines():
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(event, dict) and event.get('protocol', '').startswith('eutherus.'):
+            ordered.append(event.get('event'))
+    sequence = ['allocator_ready', 'paging_ready', 'graphics_allocated', 'boot_success',
+                'task_ready', 'scheduler_ready', 'renderer_ready', 'frame_presented', 'input_ready']
+    assert [ordered.index(event) for event in sequence] == sorted(ordered.index(event) for event in sequence)
+    graphics = lab.events(lab.logs(vm)['serial'], 'eutherus.graphics')
+    for name, id_ in [('renderer_ready', 0), ('input_ready', 1)]:
+        e = next(e for e in graphics if e['event'] == name)
+        assert e['task_id'] == id_
+        assert ready[id_]['stack_base'] <= e['rsp'] < ready[id_]['guard_high']
+    assert any(e['event'] == 'scheduler_idle' for e in task)
+    woke = [e for e in task if e['event'] == 'task_woke']
+    assert {e['id'] for e in woke} == {0, 1}
+    assert all(e['ticks'] >= e['deadline'] for e in woke)
+    assert not any(e['event'] in ('task_finished', 'tasks_complete') for e in task)
+    samples = frames(vm)
+    assert samples[0]['frame'] == 0
+    assert samples[0]['input_polls'] == samples[0]['toggles'] == 0
+    for e in samples:
+        assert e['gfx_dispatches'] == e['frame'] + 1
+        assert e['gfx_frames'] == e['gfx_yields'] == e['frame']
+        assert e['input_dispatches'] == e['input_polls'] == e['input_yields']
+    for a, b in zip(samples, samples[1:]):
+        assert b['input_polls'] > a['input_polls']
+        assert b['halt_waits'] > a['halt_waits']
+        assert b['timer_ticks'] - a['timer_ticks'] >= (b['frame'] - a['frame']) * 5
+    assert len(samples) >= 2 and samples[-1]['input_polls'] > samples[-1]['gfx_dispatches']
+    return {'task_events': task, 'graphics_events': graphics}
 
 
 def main():
@@ -79,22 +129,29 @@ def main():
         assert second['timer_ticks'] > first['timer_ticks']
         assert second['halt_waits'] > first['halt_waits']
         assert report['captures'][0]['tower_sha256'] != report['captures'][1]['tower_sha256']
+        assert all(c['branches_lit_pixels'] > 500 for c in report['captures'])
         space(names[0])
         paused = wait_frame(names[0], second['frame'], True)
         report['captures'].append(capture(names[0], out/'paused-a.ppm'))
         held = wait_frame(names[0], paused['frame'], True)
         report['captures'].append(capture(names[0], out/'paused-b.ppm'))
         assert paused['angle_milliradians'] == held['angle_milliradians']
-        assert report['captures'][2]['sha256'] == report['captures'][3]['sha256']
+        assert report['captures'][2]['tower_sha256'] == report['captures'][3]['tower_sha256']
+        assert report['captures'][2]['branches_sha256'] != report['captures'][3]['branches_sha256']
+        assert held['gfx_dispatches'] > paused['gfx_dispatches'] and held['input_polls'] > paused['input_polls']
+        assert held['toggles'] == paused['toggles'] == 1
         other = frames(names[1])[-1]
         other_next = wait_frame(names[1], other['frame'], False)
         assert other_next['angle_milliradians'] != other['angle_milliradians'], 'input leaked across VMs'
         space(names[0])
         resumed = wait_frame(names[0], held['frame'], False)
         assert resumed['angle_milliradians'] != held['angle_milliradians']
+        assert resumed['toggles'] == 2
+        assert other_next['toggles'] == 0
         report['captures'].append(capture(names[0], out/'resumed.ppm'))
         assert report['captures'][-1]['tower_sha256'] != report['captures'][-2]['tower_sha256']
         for name in names:
+            report.setdefault('task_evidence', {})[name] = task_evidence(name)
             result = lab.observe(name)
             assert result['outcome'] == 'pass'
             assert result['events'][-1]['handoff'] == 3
@@ -110,8 +167,19 @@ def main():
             for r in memory:
                 if r['event'] == 'reserved':
                     assert arena['address']+arena['pages']*4096 <= r['start'] or r['start']+r['bytes'] <= arena['address']
+        for fresh in (False, True):
+            lab.reset(names[0], fresh=fresh)
+            reset_frame = wait_frame(names[0], after=0, paused=False)
+            assert reset_frame['toggles'] == 0
+            report.setdefault('reset_evidence', []).append(task_evidence(names[0]))
+            assert lab.alive(lab.load_vm(names[1]))
+            assert wait_frame(names[1], frames(names[1])[-1]['frame'])['toggles'] == 0
+        lab.stop(names[0])
+        assert lab.alive(lab.load_vm(names[1]))
         report['checks'] = ['boot_handoff_v3', 'allocator_owned_graphics_arena', 'interrupt_timer_progress', 'halt_wait_progress', 'visible_tower', 'rotation', 'keyboard_pause',
-                            'stable_paused_pixels', 'keyboard_resume', 'two_concurrent_graphics_vms', 'input_isolation']
+                            'stable_paused_tower', 'live_task_branches_while_paused', 'guarded_graphics_input_stacks',
+                            'timed_task_sleep_and_scheduler_hlt', 'real_dispatch_work_yield_counters', 'keyboard_resume',
+                            'two_concurrent_graphics_vms', 'input_isolation', 'warm_and_fresh_reset', 'isolated_stop']
         report['passed'] = True
     except Exception as error:
         report['error'] = repr(error)

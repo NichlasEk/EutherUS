@@ -379,6 +379,7 @@ pub fn inject_faults() {
         }
     }
 }
+#[cfg(not(feature = "graphics"))]
 pub fn idle() -> ! {
     loop {
         wait_ticks(100);

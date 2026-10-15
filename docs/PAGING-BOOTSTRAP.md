@@ -92,7 +92,9 @@ python3 scripts/test-interrupts-qemu.py --build
 python3 scripts/validate.py
 ```
 
-Next: explicit task contexts and a small cooperative scheduler, with a separate
-protected stack per task, before real task telemetry feeds System Regis.
+The separate [task experiment](TASKS-BOOTSTRAP.md) extends this builder with
+four additional guards for two cooperative task stacks. Graphics now uses
+these stacks for renderer/input tasks, so both variants have eight guards total.
+Real activity from these tasks appears on the System Regis tower branches.
 
 Reference: [Intel system programming manuals](https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html), paging, PAT, CR3/CR4, TLB invalidation and IST/exception delivery.

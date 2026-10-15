@@ -12,8 +12,16 @@ uefi = { version = "=0.40.0", default-features = false }
 fontdue = "=0.9.3"
 
 [features]
-graphics = ["dep:regis-scene", "paging"]
+graphics = ["dep:regis-scene", "tasks"]
+fault-graphics-input-exit = ["graphics"]
+fault-graphics-input-guard = ["graphics"]
 paging = ["memory"]
+tasks = ["paging"]
+fault-task0-low = ["tasks"]
+fault-task0-high = ["tasks"]
+fault-task1-low = ["tasks"]
+fault-task1-high = ["tasks"]
+fault-task-overflow = ["tasks"]
 fault-guard-low = ["paging"]
 fault-guard-high = ["paging"]
 fault-emergency-low = ["paging"]
