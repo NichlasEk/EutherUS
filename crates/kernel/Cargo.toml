@@ -13,6 +13,8 @@ fontdue = "=0.9.3"
 
 [features]
 graphics = ["dep:regis-scene", "tasks"]
+fault-graphics-counter-low = ["graphics"]
+fault-graphics-counter-high = ["graphics"]
 fault-graphics-input-exit = ["graphics"]
 fault-graphics-input-guard = ["graphics"]
 paging = ["memory"]

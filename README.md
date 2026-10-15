@@ -165,4 +165,11 @@ counters without controlling task execution. Run
 `python3 scripts/test-inspector-qemu.py` after building `graphics` for the real
 QEMU keyboard, pixel, data-consistency and isolation tests.
 
-The kernel now has a bounded read-only [console](docs/PROMPT.md), opened with F1. While it has focus, Esc closes it, Space types a space, and inspector selection keys are suspended.
+The kernel now has a bounded [console](docs/PROMPT.md), opened with F1. While it has focus, Esc closes it, Space types a space, and inspector selection keys are suspended.
+
+Use `select input`, `inspect`, `memory` and `tree` in the kernel console to
+move between focused branches, resource details and the rotating overview.
+
+`run counter` starts a bounded built-in task on its own guarded stack. Its new
+tower branch counts ten timed steps, remains visible when finished, and can be
+started again. See [counter lifecycle](docs/COUNTER.md).

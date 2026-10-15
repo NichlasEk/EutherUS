@@ -19,13 +19,17 @@ pub struct View {
     pub selected: usize,
     pub visible: bool,
     pub revision: u64,
+    pub focused: bool,
+    pub memory: bool,
 }
 pub fn view() -> View {
     let value = VIEW.load(Ordering::Relaxed);
     View {
-        selected: (value & 1) as usize,
-        visible: value & 2 != 0,
-        revision: value >> 2,
+        selected: (value & 3) as usize,
+        visible: value & 4 != 0,
+        revision: value >> 5,
+        focused: value & 8 != 0,
+        memory: value & 16 != 0,
     }
 }
 #[derive(Clone, Copy)]
@@ -200,7 +204,7 @@ fn handle(control: Control, poll: u64) {
     let mut next = previous;
     match control {
         Control::Next => {
-            next.selected ^= 1;
+            next.selected = (next.selected + 1) % if tasks::inspect(2).is_some() { 3 } else { 2 };
             next.visible = true;
         }
         Control::Left => {
@@ -219,10 +223,21 @@ fn handle(control: Control, poll: u64) {
         | Control::Enter
         | Control::Backspace => unreachable!(),
     }
-    if next.selected != previous.selected || next.visible != previous.visible {
-        next.revision += 1;
+    publish(previous, next);
+}
+fn publish(previous: View, mut next: View) {
+    if next.selected != previous.selected
+        || next.visible != previous.visible
+        || next.focused != previous.focused
+        || next.memory != previous.memory
+    {
+        next.revision = previous.revision + 1;
         VIEW.store(
-            (next.revision << 2) | (u64::from(next.visible) << 1) | next.selected as u64,
+            (next.revision << 5)
+                | (u64::from(next.memory) << 4)
+                | (u64::from(next.focused) << 3)
+                | (u64::from(next.visible) << 2)
+                | next.selected as u64,
             Ordering::Relaxed,
         );
         serial!(
@@ -234,6 +249,28 @@ fn handle(control: Control, poll: u64) {
         );
     }
 }
+// UI changes only, called from input without yielding. Scheduler state is untouched.
+pub fn navigate(selected: usize, visible: bool, focused: bool, memory: bool) {
+    assert!(tasks::inspect(selected).is_some());
+    let previous = view();
+    publish(
+        previous,
+        View {
+            selected,
+            visible,
+            focused,
+            memory,
+            ..previous
+        },
+    );
+}
+pub fn release_focus() {
+    let v = view();
+    if v.focused {
+        navigate(v.selected, false, false, false);
+    }
+}
+
 unsafe fn read(port: u16) -> u8 {
     let value: u8;
     unsafe {

@@ -68,13 +68,15 @@ def main():
         command('inspect'); command('inspect input'); command('inspect 2','unknown_task')
         command('tasks nope','invalid_command'); command('reboot','invalid_command')
         before=latest(vm)['revision']; text(vm,'help ')
+        changes=len([e for e in ins.events(vm) if e['event']=='inspector_changed'])
         for key in ('tab','right','f2'): ins.tap(vm,key)
         draft=state(True,'help ',after=before)
+        assert len([e for e in ins.events(vm) if e['event']=='inspector_changed'])==changes
         ins.tap(vm,'esc'); state(False,'help ',after=draft['revision'])
         ins.tap(vm,'f1'); state(True,'help ',after=draft['revision'])
         command('')
-        assert report['commands'][-1]['context']==0
-        assert not any(e['event'] in ('pause_changed','inspector_changed') for e in ins.events(vm))
+        assert report['commands'][-1]['context']==1
+        assert not any(e['event']=='rotation_toggled' for e in ins.events(vm))
         before=latest(vm)['revision']; ins.tap(vm,'ret'); ins.tap(vm,'backspace')
         blank=state(True,'',after=before); assert blank['completed']==seq
         command('help'+' '*60+'x','line_too_long')

@@ -104,6 +104,9 @@ pub fn initialize(free_pages: usize, arena_bytes: u64) {
 pub fn toggle() {
     update(|s| {
         s.active = !s.active;
+        if !s.active {
+            crate::input::release_focus();
+        }
         s.revision += 1;
     });
 }
@@ -111,6 +114,7 @@ pub fn close() {
     update(|s| {
         if s.active {
             s.active = false;
+            crate::input::release_focus();
             s.revision += 1;
         }
     });
@@ -174,7 +178,11 @@ fn task_output(s: &mut Console, id: usize, detail: bool) {
             false,
             format_args!(
                 "completed {}: {}",
-                if id == 0 { "frames" } else { "polls" },
+                match id {
+                    0 => "frames",
+                    1 => "polls",
+                    _ => "steps",
+                },
                 t.activity.work
             ),
         );
@@ -196,7 +204,7 @@ fn task_output(s: &mut Console, id: usize, detail: bool) {
 }
 pub fn submit(context: usize) {
     update(|s| {
-        assert!(s.initialized && context < 2);
+        assert!(s.initialized && tasks::inspect(context).is_some());
         let bytes = s.input;
         let text = core::str::from_utf8(&bytes[..s.len]).unwrap();
         if text.trim().is_empty() && !s.overflow {
@@ -233,15 +241,82 @@ pub fn submit(context: usize) {
             s.push(
                 false,
                 format_args!(
-                    "inspect [graphics|input|0|1]   read a task (default: selected branch)"
+                    "inspect [graphics|input|counter]   read a task (default: selected branch)"
                 ),
             );
+            s.push(
+                false,
+                format_args!("select <graphics|input|counter>    bring a branch forward"),
+            );
+            s.push(
+                false,
+                format_args!("tree                  overview / release camera focus"),
+            );
+            s.push(
+                false,
+                format_args!("run counter           start the built-in demo task"),
+            );
+        } else if command.eq_ignore_ascii_case("run")
+            && matches!(arg, Some(a) if a.eq_ignore_ascii_case("counter"))
+            && !extra
+        {
+            kind = "run";
+            match tasks::start_counter() {
+                Ok(run) => {
+                    crate::input::navigate(2, true, true, false);
+                    s.push(
+                        false,
+                        format_args!("Counter run {} started / 10 steps / own guarded stack", run),
+                    );
+                }
+                Err(()) => {
+                    s.status = "task_busy";
+                    s.push(
+                        false,
+                        format_args!("Counter is already running. Wait for completion."),
+                    );
+                }
+            }
+        } else if command.eq_ignore_ascii_case("tree") && arg.is_none() {
+            kind = "tree";
+            crate::input::navigate(context, false, false, false);
+            s.push(
+                false,
+                format_args!("kernel / cooperative tasks / shared address space"),
+            );
+            task_output(s, 0, false);
+            task_output(s, 1, false);
+            if tasks::inspect(2).is_some() {
+                task_output(s, 2, false);
+            }
+        } else if command.eq_ignore_ascii_case("select") && arg.is_some() && !extra {
+            kind = "select";
+            if let Some(id) = task_id(arg.unwrap()) {
+                crate::input::navigate(id, false, true, false);
+                s.push(
+                    false,
+                    format_args!(
+                        "Selected {}. Type inspect for details.",
+                        tasks::inspect(id).unwrap().name
+                    ),
+                );
+            } else {
+                s.status = "unknown_task";
+                s.push(
+                    false,
+                    format_args!("Unknown task. Choose graphics, input, or an existing counter."),
+                );
+            }
         } else if command.eq_ignore_ascii_case("tasks") && arg.is_none() {
             kind = "tasks";
             task_output(s, 0, false);
             task_output(s, 1, false);
+            if tasks::inspect(2).is_some() {
+                task_output(s, 2, false);
+            }
         } else if command.eq_ignore_ascii_case("memory") && arg.is_none() {
             kind = "memory";
+            crate::input::navigate(context, false, true, true);
             s.push(
                 false,
                 format_args!("page pool free     {:>8} KiB", s.free_pages * 4),
@@ -254,30 +329,30 @@ pub fn submit(context: usize) {
                 false,
                 format_args!(
                     "task stacks        {:>8} KiB (reserved in kernel image)",
-                    256
+                    tasks::reserved_stack_bytes() / 1024
                 ),
             );
             serial!(
-                r#"{{"protocol":"eutherus.prompt","version":1,"event":"command_memory","sequence":{},"free_pages":{},"arena_bytes":{},"task_stack_bytes":262144}}"#,
+                r#"{{"protocol":"eutherus.prompt","version":1,"event":"command_memory","sequence":{},"free_pages":{},"arena_bytes":{},"task_stack_bytes":{}}}"#,
                 s.completed,
                 s.free_pages,
-                s.arena_bytes
+                s.arena_bytes,
+                tasks::reserved_stack_bytes()
             );
         } else if command.eq_ignore_ascii_case("inspect") && !extra {
             kind = "inspect";
             let id = match arg {
                 None => Some(context),
-                Some(a) if a.eq_ignore_ascii_case("graphics") || a == "0" => Some(0),
-                Some(a) if a.eq_ignore_ascii_case("input") || a == "1" => Some(1),
-                _ => None,
+                Some(a) => task_id(a),
             };
             if let Some(id) = id {
+                crate::input::navigate(id, true, true, false);
                 task_output(s, id, true);
             } else {
                 s.status = "unknown_task";
                 s.push(
                     false,
-                    format_args!("Unknown task. Choose graphics, input, 0 or 1."),
+                    format_args!("Unknown task. Choose graphics, input, or an existing counter."),
                 );
             }
         } else {
@@ -299,4 +374,16 @@ pub fn submit(context: usize) {
         s.overflow = false;
         s.revision += 1;
     });
+}
+
+fn task_id(name: &str) -> Option<usize> {
+    if name.eq_ignore_ascii_case("graphics") || name == "0" {
+        Some(0)
+    } else if name.eq_ignore_ascii_case("input") || name == "1" {
+        Some(1)
+    } else if (name.eq_ignore_ascii_case("counter") || name == "2") && tasks::inspect(2).is_some() {
+        Some(2)
+    } else {
+        None
+    }
 }

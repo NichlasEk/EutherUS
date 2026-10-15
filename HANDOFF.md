@@ -7,14 +7,24 @@ Remote är `https://github.com/NichlasEk/EutherUS.git`.
 Läs `AGENTS.md`, denna fil och `docs/ARCHITECTURE.md` före nästa ändring.
 Kontrollera aktuell arbetskopia och rapporter; bygg inte om av gammal vana.
 
-**Ny milstolpe: en läsbar kontextuell kernelprompt med help, tasks, memory och inspect.**
-Implementation, tester och dokumentation versionshanteras tillsammans i
-milstolpecommitten efter `62912e9`. Genererade byggbilder och rapporter är lokala.
-Senaste tidigare verifierade kodcommit är `f36e337`.
-Full regression för den nya arbetskopian finns i `artifacts/prompt-milestone.json`.
-Byggmanifesten anger dirty-status och exakt innehållshash; hänvisa inte till
-`62912e9` som om den committen innehöll task-implementationen.
-Denna handoff uppdaterades efter regressionen; ingen körbar kod ändrades då.
+**Ny milstolpe: run counter startar en verklig uppgift med egen skyddad stack och synlig livscykel.**
+Navigationen och räknarens livscykel versionshanteras tillsammans i
+milstolpecommitten efter `eb628c4`. Genererade byggbilder och rapporter är lokala.
+Full regression finns i `artifacts/counter-milestone.json`; byggmanifesten
+anger exakt testad innehållshash och dirty-status. Denna handoff uppdaterades
+efter regressionen; ingen körbar kod ändrades då.
+
+## Pausläge för dagen
+
+Arbetet pausas här på användarens begäran. Implementation, tester och denna
+handoff ingår i samma commit på `main`. Vid överlämningen är hela regressionen
+grön i QEMU TCG och inga controllerägda VM-processer körs. KVM och fysisk
+hårdvara är inte verifierade; known-good har inte promoverats.
+
+Börja nästa gång med denna fil, Git-status och de lokala rapporterna. Inget nytt
+arkitektursteg är beslutat. Diskutera nästa steg innan generell programladdning,
+processisolering eller utökad task-livscykel byggs. Historik och Tab-komplettering
+är också fortfarande oimplementerade. Bygg inte om eller starta VM av gammal vana.
 
 ## Vision och vad som faktiskt kör
 
@@ -30,6 +40,11 @@ ASCII-torn, med kontextuell prompt och tydligt ägarskap över maskinen.
   fortsätter. Framebufferarenan kommer från kernelns allocator. En läsande
   inspektör visar den valda uppgiftens tillstånd, väntan, stackgränser och räknare.
   Tab/pilar väljer gren, F2 visar/döljer panelen och Esc stänger den.
+  I prompten vrider `select input` fram inputgrenen, `inspect` öppnar dess
+  panel, `memory` visar reservationer och `tree` släpper kameran till överblick.
+  `run counter` skapar en tredje gren: tio steg med sleep(50), sedan finished.
+  Ny start medan aktiv ger task_busy; efter avslut återanvänds samma stackplats
+  med nytt körningsnummer och nollställd aktivitet.
 - **QEMU tasks:** separat seriell variant med två verkliga kerneluppgifter.
   De kör kooperativt på varsin skyddad stack, yieldar åtta respektive fem gånger,
   avslutas och lämnar tillbaka kontrollen till kernelns interruptdrivna idle.
@@ -48,8 +63,10 @@ Processmodell, programmodell och övergripande säkerhetsarkitektur är fortfara
 | Minne | Testad 4 KiB-frameallocator med explicita reservationer och konservativ pool under 1 GiB. |
 | Paging | Egna kopierade sidtabeller, CR3-byte, guards och splitting av stora pages. |
 | Grafik/input | Två separata tasks; delad torngeometri, framebuffer, Space-input och 6 MiB allocatorarena. |
-| Tasks | Två statiska 128 KiB-stackar, fyra ytterligare guards, Ready/Running/Sleeping/Finished och kooperativ round-robin. |
+| Tasks | Grafik: tre statiska 128 KiB-stackar och sex guards. Seriella prober: två stackar/fyra guards. Kooperativ round-robin. |
+| Counter | En fast vilande plats; input kan starta den, normal retur tillåts, resultat behålls och platsen kan startas om. |
 | Inspektör | Kopierade, läsande scheduler-snapshots; markerad gren, tangentbordsval och live-panel. |
+| Navigation | Promptval, projicerade grenfästen, kortaste kameraväg med inbromsning, exakt vila och separat minnespanel. |
 
 Normalvarianten är fortfarande den lilla seriella baslinjen. `graphics` och
 `tasks` använder samma scheduler och inkluderar paging → memory → interrupts.
@@ -66,18 +83,26 @@ Sleep yieldar till schedulern; när båda sover väntar schedulern med HLT på s
 stack. Timern väcker genom att räkna tick men gör aldrig ett task-byte.
 
 En oväntad retur från grafik/input är fatal (task_finished följt av panic).
-Input-guard-fel ger #PF på dess egen stack. Ingen task-restart/felåterhämtning
-finns. Grafiken läser kopior av räknarna och inputstatus; input rör inte arenan.
+Counter får återvända normalt och blir Finished. Dess fel är fortfarande fatala
+för hela kerneln. Den delar adressrymd och privilegier med övriga tasks.
+Input-guard-fel ger #PF på dess egen stack. Ingen generell task-restart eller
+felåterhämtning finns; bara den avslutade counter-platsen kan återanvändas. Grafiken läser kopior av räknarna och inputstatus; input rör inte arenan.
 Inspektören förändrar inte task-tillstånd. Den visar grafiken som running när
 grafiken ritar, och input normalt som sleeping med timerdeadline. En förfallen
 deadline betyder inte ready förrän schedulern gör övergången. Stackstorleken är
-reserverad kapacitet, inte uppmätt stackförbrukning. F1 öppnar den läsande
+reserverad kapacitet, inte uppmätt stackförbrukning. F1 öppnar
 prompten; Esc/F1 stänger med bevarat utkast. Med fokus skriver Space mellanslag,
 och Tab/pilar/F2 ändrar inte gren. Help, tasks, memory och inspect läser data;
 inspect utan argument använder vald gren. Input ser sig själv running när
-kommandot körs. Minnesvärdena fångas efter arenans allokering; inga senare
+kommandot körs. Select/inspect fokuserar vald gren; memory öppnar minnespanelen. Tree, Esc
+eller F1 lämnar kamerafokus. Rotation återupptas om den inte uttryckligen
+pausats med Space innan fokus. Fokus rör bara UI; tasks fortsätter arbeta.
+Den tredje stacken reserveras redan i kernelbilden även när räknaren är vilande.
+Minnesvyn visar 384 KiB användbar stackkapacitet; guards tillkommer. Start/omstart
+allokerar inga frames. Counter börjar med nytt stackinnehåll och ny entrykontext.
+Minnesvärdena fångas efter arenans allokering; inga senare
 allokeringar sker. Se `docs/PROMPT.md`, `docs/INSPECTOR.md`, `docs/TASKS-BOOTSTRAP.md` och
-`docs/GRAPHICS-BOOTSTRAP.md` före utökning.
+`docs/GRAPHICS-BOOTSTRAP.md` och `docs/COUNTER.md` före utökning.
 
 Firmwaretabeller och icke-konventionellt minne är fortfarande reserverade.
 Ingen firmware-reclamation, global heap, SMP, userspace eller generell dynamisk
@@ -85,20 +110,22 @@ mapping-/task-spawn-API finns. En task som inte yieldar kan svälta den andra.
 
 ## Verifierad evidens
 
-Sammanställning: `artifacts/prompt-milestone.json`.
-Körloggar och testad källidentitet: `artifacts/prompt-regression/summary.json`.
+Sammanställning: `artifacts/counter-milestone.json`.
+Körloggar och testad källidentitet: `artifacts/counter-regression/summary.json`.
 
 | Svit | Resultat | Lokal rapport |
 | --- | --- | --- |
-| tasks | PASS | `artifacts/reports/tasks-20261015-183048-8cac29.json` |
-| paging | PASS | `artifacts/reports/paging-20261015-183127-7bf481.json` |
-| graphics | PASS | `artifacts/regis/qemu/20261015-183128-44db73/report.json` |
-| inspector | PASS | `artifacts/regis/inspector/20261015-183200-ff2c95/report.json` |
-| prompt | PASS | `artifacts/regis/prompt/46030bff8506/report.json` |
-| graphics-faults | PASS | `artifacts/reports/graphics-faults-20261015-183349-30d7ac.json` |
-| memory | PASS | `artifacts/reports/memory-20261015-183410-abc9ab.json` |
-| cpu | PASS | `artifacts/reports/interrupts-20261015-183449-af91fe.json` |
-| baseline | PASS | `artifacts/reports/20261015-183551-f37a73.json` |
+| tasks | PASS | `artifacts/reports/tasks-20261015-201855-c1c153.json` |
+| paging | PASS | `artifacts/reports/paging-20261015-201941-e2d565.json` |
+| graphics | PASS | `artifacts/regis/qemu/20261015-201955-12e9c0/report.json` |
+| inspector | PASS | `artifacts/regis/inspector/20261015-202028-ac2723/report.json` |
+| prompt | PASS | `artifacts/regis/prompt/593dcb40aab6/report.json` |
+| navigation | PASS | `artifacts/regis/navigation/5787046950d7/report.json` |
+| counter | PASS | `artifacts/regis/counter/a922dab16740/report.json` |
+| graphics-faults | PASS | `artifacts/reports/graphics-faults-20261015-202639-d37e63.json` |
+| memory | PASS | `artifacts/reports/memory-20261015-202705-d4116f.json` |
+| cpu | PASS | `artifacts/reports/interrupts-20261015-202750-ab4ae3.json` |
+| baseline | PASS | `artifacts/reports/20261015-202855-471a4a.json` |
 
 Task-sviten bevisar exakt progressordning, registersentineler i assembly,
 volatile stackmönster, separata FP-kontrollvärden och bevarad interruptflagga.
@@ -115,9 +142,18 @@ data mot task-/frame-händelser, uppdatering under rotationspaus, två-VM-isoler
 och varm/full reset av val/panel. Promptsviten provar fokus och bevarat utkast,
 redigering, Shift, verkliga task-/minnesdata, felaktiga argument, radgräns,
 upprepade tangenter, kommandots eventordning, panelpixlar, VM-isolering och reset.
+Navigationstestet provar kortaste mjuka vridning, fast grentext, exakta
+vilopixlar, fortsatta tasks, panelbyten, fel utan vyändring, tree/Esc/F1,
+bevarad manuell paus, två VM och varm/full reset.
+Counter-sviten bevisar tio tidsseparerade steg, stack/RSP och sentineler,
+fortsatt grafik/input, busy-avvisning, avslut utan fler dispatches, omstart i samma
+stack, verkliga grenpixlar, oförändrad page pool, VM-isolering och reset mitt i
+körning. Två QEMU-felbyggen bevisar exakta #PF mot tredje stackens båda guards.
 Dessutom passerade 15 Rust-tester och 9 Python-tester.
 
-Senaste granskade riktiga QEMU-bild: `artifacts/regis/qemu-prompt.png`.
+Senaste granskade QEMU-bilder: `artifacts/regis/counter-running.png` och
+`artifacts/regis/counter-finished.png`. Tidigare navigationsbilder och
+`artifacts/regis/navigation-turn.gif` finns kvar som separat evidens.
 Tidigare rapporter finns kvar via `artifacts/graphics-tasks-milestone.json`
 och `artifacts/tasks-milestone.json`.
 
@@ -144,6 +180,8 @@ python3 scripts/test-paging-qemu.py --build
 python3 scripts/test-regis-qemu.py
 python3 scripts/test-inspector-qemu.py
 python3 scripts/test-prompt-qemu.py
+python3 scripts/test-navigation-qemu.py
+python3 scripts/test-counter-qemu.py --build
 python3 scripts/test-graphics-faults-qemu.py --build
 python3 scripts/test-memory-qemu.py --build
 python3 scripts/test-interrupts-qemu.py --build
@@ -173,8 +211,10 @@ F2 inspektör, F10 bild, Ctrl+Q avslut. Automatiska UI-tester körs separat i Xv
 
 Prompten och inspektören är implementerade. Prompten har 64 teckens rad,
 åtta utdatarader, US ASCII-inmatning och Backspace i slutet. Ingen historik-
-navigering, Unicode eller programstart finns. Nästa större steg är ännu inte
-beslutat. Grafiken har två fasta task-grenar; den generella
+navigering, Tab-komplettering, Unicode eller extern programladdning finns.
+En inbyggd counter kan startas/återstartas; ingen generell spawn-/kill-API finns.
+Grafiken visar två essentiella tasks och räknaren när den har startats.
+Nästa större steg är ännu inte beslutat; den generella
 processmodellen från native-previewen har inte flyttats in. Diskutera större
 program-/resursbeslut med användaren när de blir aktuella.
 Behåll timer/undantag separata från task-byte. Dynamisk task-livscykel,
@@ -182,6 +222,8 @@ processisolering och firmware-reclamation är senare arkitekturbeslut.
 
 | Fil | Ansvar |
 | --- | --- |
+| `docs/COUNTER.md`, `scripts/test-counter-qemu.py` | Avgränsad livscykel, stackåterbruk, branchpixlar och nya guardfel i QEMU. |
+| `scripts/test-navigation-qemu.py` | Verklig TCG-vridning, stabil text, läsfokus, vybyten, felvägar och reset. |
 | `crates/kernel/src/prompt.rs`, `scripts/test-prompt-qemu.py`, `docs/PROMPT.md` | Läsande konsol, fokus, begränsningar och faktisk QEMU-acceptans. |
 | `crates/kernel/src/tasks.rs` | Kontextbyte, stackar, scheduler och task-prober. |
 | `scripts/test-tasks-qemu.py` | QEMU-acceptans för task-progress, fel och livscykel. |

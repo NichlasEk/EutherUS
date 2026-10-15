@@ -112,3 +112,11 @@ state or expose references to scheduler storage. On the single CPU, only the
 timer tick can advance during the copy. The graphics observer sees itself as
 running and its input peer normally sleeping; a due timer is not relabelled
 ready until the scheduler actually transitions it. See [inspector](INSPECTOR.md).
+
+## Counter extension in graphics builds
+
+The serial probes still use two slots. Graphics now reserves a third guarded
+slot for a built-in restartable counter. Only the first two tasks are essential;
+normal return from the counter is retained as Finished and allows a fresh start.
+See [counter lifecycle](COUNTER.md) for initialization, reuse, generation and
+real QEMU tests of both additional guards.

@@ -7,6 +7,12 @@ use core::{
     ptr::{addr_of, addr_of_mut},
 };
 
+#[cfg(feature = "graphics")]
+const SLOTS: usize = 3;
+#[cfg(not(feature = "graphics"))]
+const SLOTS: usize = 2;
+const SCHEDULER: usize = SLOTS;
+pub const GUARD_COUNT: usize = SLOTS * 2;
 const STACK_BYTES: usize = 128 * 1024;
 #[repr(C, align(4096))]
 #[derive(Clone, Copy)]
@@ -15,14 +21,14 @@ struct Stack {
     bytes: [u8; STACK_BYTES],
     high: [u8; 4096],
 }
-static mut STACKS: [Stack; 2] = [Stack {
+static mut STACKS: [Stack; SLOTS] = [Stack {
     low: [0; 4096],
     bytes: [0; STACK_BYTES],
     high: [0; 4096],
-}; 2];
+}; SLOTS];
 // Only the scheduler and currently executing task access these. No Rust borrow
 // of shared context/state storage may live across switch(). No SMP/reentrancy.
-static mut CONTEXTS: [u64; 3] = [0; 3];
+static mut CONTEXTS: [u64; SLOTS + 1] = [0; SLOTS + 1];
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum State {
     Ready,
@@ -31,15 +37,15 @@ enum State {
     #[cfg_attr(not(feature = "graphics"), allow(dead_code))]
     Sleeping(u64),
 }
-static mut STATES: [State; 2] = [State::Ready; 2];
-static mut CURRENT: usize = 2;
+static mut STATES: [State; SLOTS] = [State::Finished; SLOTS];
+static mut CURRENT: usize = SCHEDULER;
 static mut STARTED: bool = false;
 #[derive(Clone, Copy)]
 pub struct Task {
     pub name: &'static str,
     pub body: fn(),
 }
-static mut ENTRIES: [Option<Task>; 2] = [None; 2];
+static mut ENTRIES: [Option<Task>; SLOTS] = [None; SLOTS];
 #[derive(Clone, Copy, Default)]
 pub struct Activity {
     pub dispatches: u64,
@@ -48,12 +54,12 @@ pub struct Activity {
     #[cfg_attr(not(feature = "graphics"), allow(dead_code))]
     pub work: u64,
 }
-static mut ACTIVITY: [Activity; 2] = [Activity {
+static mut ACTIVITY: [Activity; SLOTS] = [Activity {
     dispatches: 0,
     yields: 0,
     sleeps: 0,
     work: 0,
-}; 2];
+}; SLOTS];
 
 /// Read-only, by-value view; no mutable scheduler references escape.
 #[cfg(feature = "graphics")]
@@ -75,7 +81,7 @@ pub struct Snapshot {
 /// there is no yield inside the copy and no reference to scheduler storage escapes.
 #[cfg(feature = "graphics")]
 pub fn inspect(id: usize) -> Option<Snapshot> {
-    if id >= 2 {
+    if id >= SLOTS {
         return None;
     }
     unsafe {
@@ -106,14 +112,14 @@ pub fn inspect(id: usize) -> Option<Snapshot> {
 
 /// Copy snapshots only: no borrow of shared scheduler data crosses a yield.
 #[cfg(feature = "graphics")]
-pub fn activity() -> [Activity; 2] {
+pub fn activity() -> [Activity; SLOTS] {
     unsafe { ACTIVITY }
 }
 #[cfg(feature = "graphics")]
 pub fn work_done() {
     unsafe {
         let id = CURRENT;
-        assert!(id < 2 && STATES[id] == State::Running);
+        assert!(id < SLOTS && STATES[id] == State::Running);
         ACTIVITY[id].work += 1;
     }
 }
@@ -131,26 +137,26 @@ pub fn sleep(ticks: u32) {
     assert!(ticks > 0);
     unsafe {
         let id = CURRENT;
-        assert!(id < 2 && STATES[id] == State::Running);
+        assert!(id < SLOTS && STATES[id] == State::Running);
         STATES[id] = State::Sleeping(interrupts::ticks().wrapping_add(ticks as u64));
         ACTIVITY[id].yields += 1;
         ACTIVITY[id].sleeps += 1;
-        transfer(id, 2);
+        transfer(id, SCHEDULER);
         assert!(CURRENT == id && STATES[id] == State::Running);
     }
 }
 
 fn base(id: usize) -> u64 {
-    assert!(id < 2);
+    assert!(id < SLOTS);
     unsafe { addr_of!(STACKS).cast::<Stack>().add(id) as u64 + 4096 }
 }
-pub fn guards() -> [u64; 4] {
-    [
-        base(0) - 4096,
-        base(0) + STACK_BYTES as u64,
-        base(1) - 4096,
-        base(1) + STACK_BYTES as u64,
-    ]
+pub fn guards() -> [u64; GUARD_COUNT] {
+    let mut result = [0; GUARD_COUNT];
+    for id in 0..SLOTS {
+        result[id * 2] = base(id) - 4096;
+        result[id * 2 + 1] = base(id) + STACK_BYTES as u64;
+    }
+    result
 }
 
 /// Explicit SysV ABI even on the UEFI/Win64 target. Rust callers handle the ABI
@@ -198,12 +204,12 @@ extern "sysv64" fn yield_now() {
     unsafe {
         let id = CURRENT;
         assert!(
-            id < 2 && STATES[id] == State::Running,
+            id < SLOTS && STATES[id] == State::Running,
             "yield outside running task"
         );
         STATES[id] = State::Ready;
         ACTIVITY[id].yields += 1;
-        transfer(id, 2);
+        transfer(id, SCHEDULER);
         assert!(CURRENT == id && STATES[id] == State::Running);
     }
 }
@@ -253,11 +259,20 @@ extern "sysv64" fn entry() -> ! {
     unsafe {
         assert!(STATES[id] == State::Running);
         STATES[id] = State::Finished;
+        #[cfg(feature = "graphics")]
+        if id == 2 {
+            serial!(
+                r#"{{"protocol":"eutherus.tasks","version":1,"event":"counter_finished","id":2,"run":{},"steps":{},"ticks":{}}}"#,
+                counter_run(),
+                ACTIVITY[2].work,
+                interrupts::ticks()
+            );
+        }
         serial!(
             r#"{{"protocol":"eutherus.tasks","version":1,"event":"task_finished","id":{}}}"#,
             id
         );
-        transfer(id, 2);
+        transfer(id, SCHEDULER);
     }
     panic!("finished task resumed")
 }
@@ -362,23 +377,17 @@ pub fn run_with(entries: [Task; 2]) -> u64 {
     unsafe {
         assert!(!STARTED, "scheduler initialized once");
         STARTED = true;
-        ENTRIES = entries.map(Some);
+        for (id, task) in entries.iter().enumerate() {
+            ENTRIES[id] = Some(*task);
+            STATES[id] = State::Ready;
+        }
     }
     let initial_controls = controls();
     let initial_if = flags() & 0x200;
     for id in 0..2 {
         let stack = base(id);
         let top = stack + STACK_BYTES as u64;
-        // RET leaves RSP=top-8, satisfying SysV entry alignment. Entry never returns.
-        let saved = top - 80;
-        unsafe {
-            core::ptr::write_bytes(saved as *mut u8, 0, 80);
-            (saved as *mut u32).write(initial_controls.0);
-            ((saved + 4) as *mut u16).write(initial_controls.1);
-            ((saved + 56) as *mut u64).write(0x202);
-            ((saved + 64) as *mut u64).write(entry as *const () as u64);
-            CONTEXTS[id] = saved;
-        }
+        initialize_context(id, initial_controls);
         serial!(
             r#"{{"protocol":"eutherus.tasks","version":1,"event":"task_ready","id":{},"name":"{}","stack_base":{},"stack_bytes":{},"guard_low":{},"guard_high":{}}}"#,
             id,
@@ -396,7 +405,7 @@ pub fn run_with(entries: [Task; 2]) -> u64 {
     let mut idle_reported = false;
     loop {
         let mut runnable = false;
-        for id in 0..2 {
+        for id in 0..SLOTS {
             unsafe {
                 if STATES[id] == State::Finished {
                     continue;
@@ -421,12 +430,12 @@ pub fn run_with(entries: [Task; 2]) -> u64 {
                 STATES[id] = State::Running;
                 CURRENT = id;
                 ACTIVITY[id].dispatches += 1;
-                transfer(2, id);
-                CURRENT = 2;
+                transfer(SCHEDULER, id);
+                CURRENT = SCHEDULER;
                 assert!(STATES[id] != State::Running);
                 #[cfg(feature = "graphics")]
                 assert!(
-                    STATES[id] != State::Finished,
+                    id >= 2 || STATES[id] != State::Finished,
                     "essential graphics task exited"
                 );
             }
@@ -450,4 +459,100 @@ pub fn run_with(entries: [Task; 2]) -> u64 {
         }
     }
     dispatches
+}
+
+fn initialize_context(id: usize, initial_controls: (u32, u16)) {
+    let top = base(id) + STACK_BYTES as u64;
+    // RET leaves RSP=top-8, satisfying SysV entry alignment. Entry never returns.
+    let saved = top - 80;
+    unsafe {
+        core::ptr::write_bytes(saved as *mut u8, 0, 80);
+        (saved as *mut u32).write(initial_controls.0);
+        ((saved + 4) as *mut u16).write(initial_controls.1);
+        ((saved + 56) as *mut u64).write(0x202);
+        ((saved + 64) as *mut u64).write(entry as *const () as u64);
+        CONTEXTS[id] = saved;
+    }
+}
+
+#[cfg(feature = "graphics")]
+static mut COUNTER_RUN: u64 = 0;
+#[cfg(feature = "graphics")]
+pub fn counter_run() -> u64 {
+    unsafe { COUNTER_RUN }
+}
+#[cfg(feature = "graphics")]
+pub fn reserved_stack_bytes() -> usize {
+    SLOTS * STACK_BYTES
+}
+
+/// One built-in restartable slot. Input is the only caller; no yield or live
+/// mutable reference crosses initialization. A finished stack is no longer active.
+#[cfg(feature = "graphics")]
+pub fn start_counter() -> Result<u64, ()> {
+    unsafe {
+        assert!(STARTED && CURRENT == 1 && STATES[1] == State::Running);
+        if STATES[2] != State::Finished {
+            return Err(());
+        }
+        COUNTER_RUN = COUNTER_RUN.checked_add(1).expect("counter run generation");
+        core::ptr::write_bytes(base(2) as *mut u8, 0, STACK_BYTES);
+        initialize_context(2, (0x1f80, 0x037f));
+        ACTIVITY[2] = Activity::default();
+        ENTRIES[2] = Some(Task {
+            name: "counter",
+            body: counter_body,
+        });
+        STATES[2] = State::Ready;
+        serial!(
+            r#"{{"protocol":"eutherus.tasks","version":1,"event":"counter_started","id":2,"run":{},"stack_base":{},"stack_bytes":{},"guard_low":{},"guard_high":{},"ticks":{}}}"#,
+            counter_run(),
+            base(2),
+            STACK_BYTES,
+            base(2) - 4096,
+            base(2) + STACK_BYTES as u64,
+            interrupts::ticks()
+        );
+        Ok(COUNTER_RUN)
+    }
+}
+#[cfg(feature = "graphics")]
+fn counter_body() {
+    let run = counter_run();
+    let mut sentinel = [run; 16];
+    let ptr = sentinel.as_mut_ptr();
+    assert!((base(2)..base(2) + STACK_BYTES as u64).contains(&(ptr as u64)));
+    for step in 1..=10 {
+        for i in 0..16 {
+            unsafe {
+                ptr.add(i).write_volatile(run ^ i as u64);
+            }
+        }
+        sleep(50);
+        for i in 0..16 {
+            assert_eq!(unsafe { ptr.add(i).read_volatile() }, run ^ i as u64);
+        }
+        work_done();
+        serial!(
+            r#"{{"protocol":"eutherus.tasks","version":1,"event":"counter_progress","id":2,"run":{},"step":{},"total":10,"ticks":{},"rsp":{},"stack_preserved":true}}"#,
+            run,
+            step,
+            interrupts::ticks(),
+            stack_pointer()
+        );
+        if step == 2
+            && (cfg!(feature = "fault-graphics-counter-low")
+                || cfg!(feature = "fault-graphics-counter-high"))
+        {
+            let address = if cfg!(feature = "fault-graphics-counter-low") {
+                base(2) - 4096
+            } else {
+                base(2) + STACK_BYTES as u64
+            };
+            unsafe {
+                (address as *mut u64).write_volatile(0xfeed);
+            }
+            panic!("counter guard did not fault");
+        }
+    }
 }

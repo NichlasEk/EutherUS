@@ -1,7 +1,7 @@
 //! Bootstrap framebuffer renderer. All firmware access is confined to prepare().
 use crate::Serial;
 use core::{fmt::Write, ptr::write_volatile};
-use regis_scene::{Projector, tint};
+use regis_scene::{Point, Projector, tint};
 use uefi::{
     boot,
     proto::console::gop::{GraphicsOutput, PixelFormat},
@@ -43,6 +43,18 @@ struct Canvas {
     height: usize,
 }
 impl Canvas {
+    fn line(&mut self, x0: usize, y0: usize, x1: usize, y1: usize, color: u32) {
+        let dx = x1 as i32 - x0 as i32;
+        let dy = y1 as i32 - y0 as i32;
+        let steps = dx.abs().max(dy.abs()).max(1);
+        for i in 0..=steps {
+            let x = x0 as i32 + dx * i / steps;
+            let y = y0 as i32 + dy * i / steps;
+            if x >= 0 && y >= 0 {
+                self.rect(x as usize, y as usize, 1, 1, color);
+            }
+        }
+    }
     fn rect(&mut self, x: usize, y: usize, width: usize, height: usize, color: u32) {
         for row in y..(y + height).min(self.height) {
             for col in x..(x + width).min(self.width) {
@@ -163,6 +175,7 @@ fn render(fb: &Framebuffer, free_pages: usize) -> ! {
     let mut frame = 0u64;
     let mut shown_revision = u64::MAX;
     let mut prompt_revision = u64::MAX;
+    let mut counter_shown = (0, 0, "absent");
     assert!(
         crate::tasks::inspect(2).is_none(),
         "invalid task inspection"
@@ -173,9 +186,39 @@ fn render(fb: &Framebuffer, free_pages: usize) -> ! {
         let activity = crate::tasks::activity();
         let view = crate::input::view();
         let inspected = crate::tasks::inspect(view.selected).expect("selected live task");
+        let counter = crate::tasks::inspect(2);
+        let counter_key = counter
+            .map(|t| (crate::tasks::counter_run(), t.activity.work, t.state))
+            .unwrap_or((0, 0, "absent"));
+        let counter_changed = counter_key != counter_shown;
         let view_changed = view.revision != shown_revision;
         let console = crate::prompt::snapshot();
-        if frame > 0 && !paused {
+        let target = if view.memory {
+            0.45
+        } else if view.selected == 0 {
+            0.0
+        } else if view.selected == 1 {
+            core::f32::consts::PI
+        } else {
+            core::f32::consts::FRAC_PI_2
+        };
+        let mut settled = false;
+        if view.focused {
+            // Shortest arc, bounded speed, ease-out, then exact rest (no endless drift).
+            let mut delta = target - angle;
+            while delta > core::f32::consts::PI {
+                delta -= core::f32::consts::TAU;
+            }
+            while delta < -core::f32::consts::PI {
+                delta += core::f32::consts::TAU;
+            }
+            if delta.abs() <= 0.003 {
+                angle = target;
+                settled = true;
+            } else {
+                angle += (delta * 0.18).clamp(-0.09, 0.09);
+            }
+        } else if frame > 0 && !paused {
             angle += 0.025;
             if angle >= core::f32::consts::TAU {
                 angle -= core::f32::consts::TAU;
@@ -233,8 +276,12 @@ fn render(fb: &Framebuffer, free_pages: usize) -> ! {
         // Branches are measured scheduler activity, not the native simulated model.
         for (id, x, y, title, unit) in [
             (0, 64, 276, "GRAPHICS", "FRAMES"),
-            (1, 704, 408, "INPUT", "POLLS"),
+            (1, 704, 400, "INPUT", "POLLS"),
+            (2, 64, 400, "COUNTER", "STEPS"),
         ] {
+            if id == 2 && counter.is_none() {
+                continue;
+            }
             let item = activity[id];
             let mut text = Label {
                 bytes: [0; 96],
@@ -267,7 +314,17 @@ fn render(fb: &Framebuffer, free_pages: usize) -> ! {
                 (3, "YIELDS", item.yields),
             ] {
                 text.len = 0;
-                write!(text, "{} {:>10}", key, value).unwrap();
+                if id == 2 && row == 3 {
+                    write!(
+                        text,
+                        "{} / RUN {}",
+                        counter.unwrap().state,
+                        crate::tasks::counter_run()
+                    )
+                    .unwrap();
+                } else {
+                    write!(text, "{} {:>10}", key, value).unwrap();
+                }
                 canvas.text(
                     x,
                     y + row * 20,
@@ -277,35 +334,49 @@ fn render(fb: &Framebuffer, free_pages: usize) -> ! {
             }
             canvas.text(x, y + 80, "STACK 128 KiB / GUARDED", 0x8b9ca8);
         }
-        canvas.text(
-            248,
-            276,
-            "-------------------+",
-            if view.selected == 0 {
+        // Fixed, readable labels connected to points in the rotating geometry.
+        for (id, px, y, z, label_x, label_y) in [
+            (0, 0.0, 0.8, 0.9, 248, 283),
+            (1, 0.0, -0.3, -0.9, 696, 407),
+            (2, -0.9, -0.45, 0.0, 248, 407),
+        ] {
+            if id == 2 && counter.is_none() {
+                continue;
+            }
+            let (x, y, _) = projection.project(Point { x: px, y, z });
+            let front = -px * projection.sin + z * projection.cos >= 0.0;
+            let color = if view.memory || (view.focused && view.selected == id) {
                 0xe9ca8c
-            } else {
+            } else if front {
                 0x4f827f
-            },
-        );
-        canvas.text(
-            648,
-            408,
-            "+-----",
-            if view.selected == 1 {
-                0xe9ca8c
             } else {
-                0x4f827f
-            },
-        );
+                0x243c48
+            };
+            canvas.line(label_x, label_y, x as usize, y as usize, color);
+            canvas.rect(x as usize - 3, y as usize - 3, 7, 7, color);
+            canvas.rect(x as usize - 1, y as usize - 1, 3, 3, BG);
+        }
+        if view.focused {
+            canvas.text(
+                48,
+                122,
+                if view.memory {
+                    "MEMORY / SHARED POOL + TASK RESERVATIONS"
+                } else if settled {
+                    "BRANCH IN FOCUS / ESC OR tree TO RELEASE"
+                } else {
+                    "BRINGING BRANCH INTO VIEW"
+                },
+                0x77cfc6,
+            );
+        }
+        if view.memory {
+            memory_panel(&mut canvas, free_pages, fb.back_buffer_bytes);
+        }
         if view.visible {
             inspector(&mut canvas, inspected);
         }
-        canvas.text(
-            48,
-            642,
-            "TWO KERNEL TASKS / IRQ CLOCK / SLEEP + HLT",
-            0xe9ca8c,
-        );
+        canvas.text(48, 642, "KERNEL TASKS / IRQ CLOCK / SLEEP + HLT", 0xe9ca8c);
         canvas.text(
             48,
             666,
@@ -316,7 +387,9 @@ fn render(fb: &Framebuffer, free_pages: usize) -> ! {
         canvas.text(
             48,
             728,
-            if paused {
+            if view.focused {
+                "READING FOCUS / CAMERA HELD"
+            } else if paused {
                 "ROTATION PAUSED"
             } else {
                 "ROTATION RUNNING"
@@ -367,7 +440,7 @@ fn render(fb: &Framebuffer, free_pages: usize) -> ! {
                 view.revision
             );
         }
-        if view.visible && (frame % 20 == 0 || view_changed) {
+        if view.visible && (frame % 20 == 0 || view_changed || counter_changed) {
             // The same snapshot drives pixels and this post-presentation evidence.
             let i = inspected;
             let mut deadline = Label {
@@ -419,6 +492,45 @@ fn render(fb: &Framebuffer, free_pages: usize) -> ! {
                 console.status
             );
         }
+        if view_changed || (view.focused && (!settled || frame % 5 == 0)) || frame % 20 == 0 {
+            serial!(
+                r#"{{"protocol":"eutherus.graphics","version":1,"event":"navigation_presented","frame":{},"revision":{},"selected":{},"focused":{},"mode":"{}","settled":{},"angle_milliradians":{},"target_milliradians":{},"inspector_visible":{},"free_pages":{},"arena_bytes":{}}}"#,
+                frame,
+                view.revision,
+                view.selected,
+                view.focused,
+                if view.memory {
+                    "memory"
+                } else if view.focused {
+                    "task"
+                } else {
+                    "overview"
+                },
+                settled,
+                (angle * 1000.) as i32,
+                (target * 1000.) as i32,
+                view.visible,
+                free_pages,
+                fb.back_buffer_bytes
+            );
+        }
+        if counter_changed || (counter.is_some() && frame % 20 == 0) {
+            if let Some(t) = counter {
+                serial!(
+                    r#"{{"protocol":"eutherus.graphics","version":1,"event":"counter_presented","frame":{},"run":{},"state":"{}","steps":{},"dispatches":{},"sleeps":{},"selected":{},"gfx_frames":{},"input_polls":{}}}"#,
+                    frame,
+                    crate::tasks::counter_run(),
+                    t.state,
+                    t.activity.work,
+                    t.activity.dispatches,
+                    t.activity.sleeps,
+                    view.selected,
+                    activity[0].work,
+                    activity[1].work
+                );
+            }
+        }
+        counter_shown = counter_key;
         prompt_revision = console.revision;
         shown_revision = view.revision;
         crate::tasks::work_done();
@@ -447,7 +559,11 @@ fn inspector(canvas: &mut Canvas, i: crate::tasks::Snapshot) {
             5 => write!(
                 line,
                 "{}  {}",
-                if i.id == 0 { "FRAMES" } else { "POLLS " },
+                match i.id {
+                    0 => "FRAMES",
+                    1 => "POLLS ",
+                    _ => "STEPS ",
+                },
                 i.activity.work
             ),
             6 => write!(line, "STACK  {} KiB", (i.stack_end - i.stack_base) / 1024),
@@ -507,8 +623,35 @@ fn draw_prompt(canvas: &mut Canvas, console: &crate::prompt::Console, context: &
         if console.overflow {
             "LINE FULL / 64 CHARACTERS / BACKSPACE TO EDIT"
         } else {
-            "ENTER  RUN     BACKSPACE  EDIT     help  /  tasks  /  memory  /  inspect"
+            "ENTER RUN   BACKSPACE EDIT   select / inspect / memory / tree   help"
         },
         if console.overflow { 0xe9a080 } else { 0x7e929e },
     );
+}
+
+fn memory_panel(canvas: &mut Canvas, free_pages: usize, arena_bytes: u64) {
+    canvas.text(704, 136, "MEMORY / OWNERSHIP", 0xe9ca8c);
+    for (row, key, value) in [
+        (0, "POOL FREE", free_pages as u64 * 4),
+        (1, "GFX ARENA", arena_bytes / 1024),
+        (2, "GFX STACK", 128),
+        (3, "INPUT STACK", 128),
+        (4, "COUNTER SLOT", 128),
+    ] {
+        let mut text = Label {
+            bytes: [0; 96],
+            len: 0,
+        };
+        write!(text, "{} {} KiB", key, value).unwrap();
+        canvas.text(
+            704,
+            164 + row * 24,
+            core::str::from_utf8(&text.bytes[..text.len]).unwrap(),
+            0x77cfc6,
+        );
+    }
+    canvas.text(704, 274, "STACKS RESERVED IN IMAGE", 0x8b9ca8);
+    canvas.text(704, 296, "ARENA OWNED BY GRAPHICS", 0x8b9ca8);
+    canvas.text(704, 318, "POOL SHARED / BOOT SNAPSHOT", 0x8b9ca8);
+    canvas.text(704, 340, "CAPACITY, NOT STACK USAGE", 0x8b9ca8);
 }

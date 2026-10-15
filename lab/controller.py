@@ -25,7 +25,7 @@ STATE = ROOT / '.lab'
 ARTIFACTS = ROOT / 'artifacts'
 TARGET = 'x86_64-unknown-uefi'
 BASE_VARIANTS = ('normal', 'panic', 'timeout', 'crash')
-VARIANTS = BASE_VARIANTS + ('graphics', 'interrupts', 'invalid-opcode', 'page-fault', 'general-protection', 'double-fault', 'timer-masked', 'memory', 'memory-empty', 'memory-invalid', 'paging', 'guard-low', 'guard-high', 'emergency-low', 'emergency-high', 'stack-overflow', 'tasks', 'task0-low', 'task0-high', 'task1-low', 'task1-high', 'task-overflow', 'graphics-input-exit', 'graphics-input-guard')
+VARIANTS = BASE_VARIANTS + ('graphics', 'interrupts', 'invalid-opcode', 'page-fault', 'general-protection', 'double-fault', 'timer-masked', 'memory', 'memory-empty', 'memory-invalid', 'paging', 'guard-low', 'guard-high', 'emergency-low', 'emergency-high', 'stack-overflow', 'tasks', 'task0-low', 'task0-high', 'task1-low', 'task1-high', 'task-overflow', 'graphics-input-exit', 'graphics-input-guard', 'graphics-counter-low', 'graphics-counter-high')
 EVENTS = ['uefi_entry', 'boot_services_exited', 'memory_map', 'boot_success']
 LOCKS = threading.local()
 

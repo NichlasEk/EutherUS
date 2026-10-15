@@ -168,9 +168,10 @@ pub fn install(frames: &mut Frames<'_>) {
     #[cfg(feature = "tasks")]
     let guards = {
         let task = crate::tasks::guards();
-        [
-            guards[0], guards[1], guards[2], guards[3], task[0], task[1], task[2], task[3],
-        ]
+        let mut all = [0; 4 + crate::tasks::GUARD_COUNT];
+        all[..4].copy_from_slice(&guards);
+        all[4..].copy_from_slice(&task);
+        all
     };
     for guard in guards {
         assert_eq!(guard % PAGE, 0);

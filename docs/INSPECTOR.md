@@ -1,14 +1,13 @@
 # System Regis task inspector
 
-The `graphics` kernel includes a read-only inspector for its real renderer and
-input tasks. It does not use the simulated `regis-model` from the Linux preview.
-It adds no process model, task control, text prompt or dynamic task lifetime.
+The `graphics` kernel includes a read-only inspector for its real renderer, input and started counter tasks. It does not use the simulated `regis-model` from the Linux preview.
+The inspector adds no process model, task control or dynamic task lifetime.
 
 ## Controls and display
 
 | Key | Effect |
 | --- | --- |
-| Tab | Select the next of the two tasks (wrap around) and open the inspector. |
+| Tab | Select the next present task (wrap around) and open the inspector. |
 | Left / Right | Select graphics / input and open the inspector. |
 | F2 | Show or hide the inspector without changing selection. |
 | Esc | Close the inspector; retain selection. |
@@ -22,7 +21,7 @@ Stack end is exclusive. The displayed 128 KiB is reserved usable storage, not a
 measurement of current or peak stack consumption. Both guards are 4 KiB.
 
 The input task exclusively handles keyboard bytes and updates a packed
-selection/visibility/revision value. Repeated makes do not trigger another action
+selection/visibility/focus/memory-mode/revision value. Repeated makes do not trigger another action
 until the corresponding break is consumed. The decoder distinguishes E0-prefixed
 left/right from unprefixed keypad keys, consumes the E1 Pause sequence and
 ignores unsupported keys. It remains a bounded Q35 translated PS/2 bootstrap,
@@ -56,7 +55,7 @@ All new events use `eutherus.graphics` version 1, separate from unchanged boot
 and scheduler event ordering. Existing fields retain their meanings.
 
 - `inspector_changed`: input task id, `selected`, `visible`, monotonic `revision`
-  and input observation `ticks`. Emitted only if selection or visibility changes.
+  and input observation `ticks`. Emitted if selection, visibility, camera focus or memory mode changes.
 - `frame_presented`: adds `selected_task`, `inspector_visible`,
   `selection_revision`. Emitted every 20 frames and on a view revision change.
 - `inspector_presented`: emitted after a visible panel is presented, at the same
@@ -90,4 +89,7 @@ points to the latest result. Run the graphics, live graphics-fault, finite task,
 paging, memory, CPU and baseline suites as regression. TCG is the acceptance
 baseline; KVM and physical hardware are not covered by these results.
 
-The kernel now has a bounded read-only [console](PROMPT.md), opened with F1. While it has focus, Esc closes it, Space types a space, and inspector selection keys are suspended.
+The kernel now has a bounded [console](PROMPT.md), opened with F1. While it has focus, Esc closes it, Space types a space, and inspector selection keys are suspended.
+
+Prompt commands can also select a branch and open its panel with a focused
+camera; see [prompt navigation](PROMPT.md#prompt-driven-tower-navigation).

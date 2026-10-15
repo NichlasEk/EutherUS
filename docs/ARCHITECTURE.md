@@ -136,4 +136,16 @@ Its sidebar shows actual state/wait, stack bounds and activity. Input owns a
 packed selection/visibility/revision value; navigation cannot alter task state.
 See [inspector](INSPECTOR.md) for controls, observation semantics and TCG evidence.
 
-The kernel now has a bounded read-only [console](PROMPT.md), opened with F1. While it has focus, Esc closes it, Space types a space, and inspector selection keys are suspended.
+The kernel now has a bounded [console](PROMPT.md), opened with F1. While it has focus, Esc closes it, Space types a space, and inspector selection keys are suspended.
+
+Prompt navigation changes only the input-owned UI view. The renderer eases its
+camera toward the selected task anchor while reading copied scheduler data.
+Releasing focus preserves any explicit manual rotation pause. Memory view uses
+the captured allocation snapshot; it does not introduce new allocation APIs.
+
+## Built-in lifecycle experiment
+
+Graphics reserves a third guarded stack for a restartable `counter` task. Input
+can start it through the allow-listed `run counter` command. Its normal return
+is allowed, unlike essential renderer/input returns. See [counter](COUNTER.md)
+for generation, restart ordering, dormant-slot accounting and QEMU guard tests.
